@@ -5,6 +5,7 @@ import io.github.sceneview.math.Position as ScenePosition
 import io.github.sceneview.math.Rotation as SceneRotation
 import io.github.sceneview.math.Scale as SceneScale
 import kotlin.math.sqrt
+import kotlin.math.atan2
 
 fun deserializeMatrix4(transform: ArrayList<Double>): Triple<ScenePosition, SceneRotation, SceneScale> {
     // Position
@@ -25,37 +26,27 @@ fun deserializeMatrix4(transform: ArrayList<Double>): Triple<ScenePosition, Scen
     Log.d("Deserializers", "Échelle extraite: x=${scale.x}, y=${scale.y}, z=${scale.z}")
 
     // Rotation
-    val m00 = transform[0].toFloat()
-    val m01 = transform[4].toFloat()
-    val m02 = transform[8].toFloat()
-    val m10 = transform[1].toFloat()
-    val m11 = transform[5].toFloat()
-    val m12 = transform[9].toFloat()
-    val m20 = transform[2].toFloat()
-    val m21 = transform[6].toFloat()
-    val m22 = transform[10].toFloat()
+    val m00 = transform[0].toFloat() / scaleX
+    val m01 = transform[4].toFloat() / scaleY
+    val m02 = transform[8].toFloat() / scaleZ
+    val m10 = transform[1].toFloat() / scaleX
+    val m11 = transform[5].toFloat() / scaleY
+    val m12 = transform[9].toFloat() / scaleZ
+    val m20 = transform[2].toFloat() / scaleX
+    val m21 = transform[6].toFloat() / scaleY
+    val m22 = transform[10].toFloat() / scaleZ
 
-    Log.d("Deserializers", "Matrice de rotation brute: [$m00, $m01, $m02, $m10, $m11, $m12, $m20, $m21, $m22]")
+    Log.d("Deserializers", "Matrice de rotation normalisée: [$m00, $m01, $m02, $m10, $m11, $m12, $m20, $m21, $m22]")
     
-    val trace = m00 + m11 + m22
-    Log.d("Deserializers", "Trace de la matrice: $trace")
+    // Conversion de la matrice de rotation en angles d'Euler
+    // Formule standard de conversion matrice -> angles d'Euler
+    val rotX = atan2(m21, m22)
+    val rotY = atan2(-m20, sqrt(m21 * m21 + m22 * m22))
+    val rotZ = atan2(m10, m00)
     
-    val rotation = if (trace > 0) {
-        val s = sqrt(trace + 1.0f) * 2f
-        Log.d("Deserializers", "Valeur de s pour le calcul du quaternion: $s")
-        
-        val qx = (m21 - m12) / s
-        val qy = (m02 - m20) / s
-        val qz = (m10 - m01) / s
-        val qw = 0.25f * s  // Ajout de la composante w du quaternion
-        
-        SceneRotation(x = qx, y = qy, z = qz, w = qw)
-    } else {
-        Log.d("Deserializers", "Trace négative ou nulle, utilisation d'une rotation par défaut")
-        SceneRotation(0f, 0f, 0f, 1f)  // Quaternion d'identité (pas de rotation)
-    }
+    val rotation = SceneRotation(rotX, rotY, rotZ)
     
-    Log.d("Deserializers", "Rotation extraite (quaternion): x=${rotation.x}, y=${rotation.y}, z=${rotation.z}, w=${rotation.w}")
+    Log.d("Deserializers", "Rotation extraite (euler): x=${rotation.x}, y=${rotation.y}, z=${rotation.z}")
 
     return Triple(position, rotation, scale)
 } 
