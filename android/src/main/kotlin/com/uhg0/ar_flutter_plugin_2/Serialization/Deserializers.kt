@@ -1,20 +1,30 @@
 package com.uhg0.ar_flutter_plugin_2.Serialization
 
-import io.github.sceneview.math.Position as ScenePosition
-import io.github.sceneview.math.Rotation as SceneRotation
-import io.github.sceneview.math.Scale as SceneScale
-import io.github.sceneview.math.Quaternion as SceneQuaternion
-import io.github.sceneview.math.Transform as SceneTransform
-import io.github.sceneview.math.toQuaternion
-import io.github.sceneview.math.Float4
+// --- Importations SceneView (garder uniquement pour les alias si nécessaire) ---
+// import io.github.sceneview.math.Position as ScenePosition // Plus nécessaire pour le retour
+// import io.github.sceneview.math.Rotation as SceneRotation // Plus nécessaire
+// import io.github.sceneview.math.Scale as SceneScale // Plus nécessaire
+// import io.github.sceneview.math.Quaternion as SceneQuaternion // Plus nécessaire
+// import io.github.sceneview.math.Transform as SceneTransform // Plus nécessaire
+// import io.github.sceneview.math.toQuaternion // Plus nécessaire
+
+// +++ Importations dev.romainguy.kotlin.math +++
+import dev.romainguy.kotlin.math.Float3
+import dev.romainguy.kotlin.math.Quaternion
+import dev.romainguy.kotlin.math.Mat4
+import dev.romainguy.kotlin.math.normalize // Pour normaliser les quaternions si nécessaire
+import dev.romainguy.kotlin.math.rotation // Pour extraire la sous-matrice de rotation
+import dev.romainguy.kotlin.math.Float4 // Pour la colonne w de Mat4 si nécessaire
+// --- Fin Importations ---
+
 import kotlin.math.sqrt
 
-fun deserializeMatrix4(transform: ArrayList<Double>): Pair<ScenePosition, SceneRotation> {
+fun deserializeMatrix4(transform: ArrayList<Double>): Pair<Float3, Quaternion> {
     // Position
-    val position = ScenePosition(
-        x = transform[12].toFloat(),
-        y = transform[13].toFloat(),
-        z = transform[14].toFloat()
+    val position = Float3(
+        transform[12].toFloat(),
+        transform[13].toFloat(),
+        transform[14].toFloat()
     )
 
     // Rotation
@@ -31,64 +41,51 @@ fun deserializeMatrix4(transform: ArrayList<Double>): Pair<ScenePosition, SceneR
     val trace = m00 + m11 + m22
     val rotation = if (trace > 0) {
         val s = sqrt(trace + 1.0f) * 2f
-        SceneRotation(
+        Quaternion(
             x = (m21 - m12) / s,
             y = (m02 - m20) / s,
             z = (m10 - m01) / s
         )
     } else {
-        SceneRotation()
+        Quaternion()
     }
 
     return Pair(position, rotation)
 }
 
-fun deserializeMatrixComponents(transform: List<Double>): Triple<ScenePosition, SceneQuaternion, SceneScale> {
+fun deserializeMatrixComponentsFromList(transform: List<Double>): Triple<Float3, Quaternion, Float3> {
     // Check size just in case
     if (transform.size != 16) {
         throw IllegalArgumentException("Transformation list must have 16 elements.")
     }
 
-    // Position
-    val position = ScenePosition(
-        x = transform[12].toFloat(),
-        y = transform[13].toFloat(),
-        z = transform[14].toFloat()
-    )
+    // Convertir List<Double> en FloatArray pour Mat4
+    val matrixArray = transform.map { it.toFloat() }.toFloatArray()
+    val mat4 = Mat4.fromColumnMajor(matrixArray) // Créer Mat4 à partir de column-major data
+
+    // Position (extraite de la 4ème colonne)
+    val position = Float3(mat4[3].x, mat4[3].y, mat4[3].z) // Accès à la 4ème colonne (indice 3)
 
     // Scale - Calculate scale from matrix columns' length
-    val scaleX = sqrt(transform[0].toFloat() * transform[0].toFloat() + transform[1].toFloat() * transform[1].toFloat() + transform[2].toFloat() * transform[2].toFloat())
-    val scaleY = sqrt(transform[4].toFloat() * transform[4].toFloat() + transform[5].toFloat() * transform[5].toFloat() + transform[6].toFloat() * transform[6].toFloat())
-    val scaleZ = sqrt(transform[8].toFloat() * transform[8].toFloat() + transform[9].toFloat() * transform[9].toFloat() + transform[10].toFloat() * transform[10].toFloat())
-    // Avoid division by zero if scale is zero (though unlikely for valid matrices)
+    val scaleX = length(mat4[0].xyz) // Longueur de la 1ère colonne (vecteur X)
+    val scaleY = length(mat4[1].xyz) // Longueur de la 2ème colonne (vecteur Y)
+    val scaleZ = length(mat4[2].xyz) // Longueur de la 3ème colonne (vecteur Z)
+    // Avoid division by zero
     val safeScaleX = if (scaleX == 0f) 1f else scaleX
     val safeScaleY = if (scaleY == 0f) 1f else scaleY
     val safeScaleZ = if (scaleZ == 0f) 1f else scaleZ
-    val scale = SceneScale(safeScaleX, safeScaleY, safeScaleZ)
+    val scale = Float3(safeScaleX, safeScaleY, safeScaleZ)
 
-
-    // Rotation - Convert rotation part of matrix to Quaternion
-    // Create Mat4 from the list (SceneTransform is an alias for Mat4)
-    val mat4 = SceneTransform(
-         floatArrayOf(
-            transform[0].toFloat(), transform[1].toFloat(), transform[2].toFloat(), transform[3].toFloat(),
-            transform[4].toFloat(), transform[5].toFloat(), transform[6].toFloat(), transform[7].toFloat(),
-            transform[8].toFloat(), transform[9].toFloat(), transform[10].toFloat(), transform[11].toFloat(),
-            transform[12].toFloat(), transform[13].toFloat(), transform[14].toFloat(), transform[15].toFloat()
-        )
+    // Rotation - Extraire la sous-matrice 3x3 de rotation et la convertir en Quaternion
+    // Créer une Mat4 de rotation pure en normalisant les colonnes
+    val rotMat = Mat4(
+        Float4(mat4[0].x / safeScaleX, mat4[0].y / safeScaleX, mat4[0].z / safeScaleX, 0f),
+        Float4(mat4[1].x / safeScaleY, mat4[1].y / safeScaleY, mat4[1].z / safeScaleY, 0f),
+        Float4(mat4[2].x / safeScaleZ, mat4[2].y / safeScaleZ, mat4[2].z / safeScaleZ, 0f),
+        Float4(0f, 0f, 0f, 1f) // Colonne de translation mise à zéro
     )
+    // Utiliser le constructeur de Quaternion à partir de Mat4
+    val quaternion = Quaternion(rotMat) // Crée un quaternion à partir de la matrice 4x4 (qui ne contient que la rotation)
 
-    // Normalize the matrix first for stable quaternion conversion if scales are non-uniform or zero
-    val mutableMatrix = mat4.toMutableMat4()
-    mutableMatrix.apply {
-         // Divide columns by scale to get pure rotation
-         setColumn(0, getColumn(0) / safeScaleX)
-         setColumn(1, getColumn(1) / safeScaleY)
-         setColumn(2, getColumn(2) / safeScaleZ)
-         // Ensure the 4th column represents translation = 0 for rotation matrix
-         setColumn(3, Float4(0f, 0f, 0f, 1f))
-    }
-    val quaternion: SceneQuaternion = mutableMatrix.toQuaternion()
-
-    return Triple(position, quaternion, scale)
+    return Triple(position, normalize(quaternion), scale) // Normaliser le quaternion par sécurité
 } 

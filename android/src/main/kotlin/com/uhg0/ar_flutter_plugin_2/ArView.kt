@@ -62,6 +62,11 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
 import com.uhg0.ar_flutter_plugin_2.Serialization.deserializeMatrixComponents
 import io.github.sceneview.math.Quaternion as SceneQuaternion
+import dev.romainguy.kotlin.math.Float3
+import dev.romainguy.kotlin.math.Quaternion
+import dev.romainguy.kotlin.math.length
+import dev.romainguy.kotlin.math.normalize
+import com.uhg0.ar_flutter_plugin_2.Serialization.deserializeMatrixComponentsFromList
 
 class ArView(
     context: Context,
@@ -98,9 +103,9 @@ class ArView(
 
     // ++ NEW PROPERTIES FOR PHYSICS ++
     // Map to store nodes currently undergoing physics simulation and their velocities
-    private val activePhysicsNodes = ConcurrentHashMap<Node, Vector3>()
+    private val activePhysicsNodes = ConcurrentHashMap<Node, Float3>()
     // Gravity vector (adjust Y value as needed for desired effect)
-    private val gravity = Vector3(0.0f, -9.8f, 0.0f) // m/s^2
+    private val gravity = Float3(0.0f, -9.8f, 0.0f) // m/s^2
     // Map to store potential target nodes (if needed for collision)
     private val targetNodes = ConcurrentHashMap<String, Node>() // Using ConcurrentHashMap for potential modifications from different threads
     // Timestamp of the last frame for deltaTime calculation
@@ -695,10 +700,10 @@ class ArView(
                 }
 
                 try {
-                    val (newPosition, newQuaternion, newScale) = deserializeMatrixComponents(transformationList)
-                    node.position = newPosition
-                    node.quaternion = newQuaternion
-                    node.scale = newScale
+                    val (newPosition, newQuaternion, newScale) = deserializeMatrixComponentsFromList(transformationList)
+                    node.position = ScenePosition(newPosition.x, newPosition.y, newPosition.z)
+                    node.quaternion = SceneQuaternion(newQuaternion.x, newQuaternion.y, newQuaternion.z, newQuaternion.w)
+                    node.scale = SceneScale(newScale.x, newScale.y, newScale.z)
                     result.success(null)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error applying transformation changed for node $name", e)
@@ -1377,11 +1382,11 @@ class ArView(
         activePhysicsNodes.forEach { (node, velocity) ->
             // 1. Apply Gravity using Vector3 methods
             val scaledGravity = gravity.scaled(deltaTime) // Calculate scaled gravity vector
-            val newVelocity = Vector3.add(velocity, scaledGravity) // Add velocity and scaled gravity
+            val newVelocity = velocity + scaledGravity
 
             // 2. Update Position using Vector3 methods
-            val displacement = newVelocity.scaled(deltaTime) // Calculate displacement vector
-            node.position = Position(
+            val displacement = newVelocity * deltaTime // Float3 (romainguy)
+            node.position = ScenePosition(
                 node.position.x + displacement.x,
                 node.position.y + displacement.y,
                 node.position.z + displacement.z
@@ -1393,17 +1398,14 @@ class ArView(
             // 4. Basic Collision Detection using Vector3 methods
             var collisionDetected = false
             targetNodes.forEach { (targetName, targetNode) ->
-                 val nodeWorldPos = node.worldPosition // Type is math.Position
-                 val targetWorldPos = targetNode.worldPosition // Type is math.Position
+                 val nodeWorldPos = node.worldPosition // ScenePosition?
+                 val targetWorldPos = targetNode.worldPosition // ScenePosition?
                  if (nodeWorldPos != null && targetWorldPos != null) {
                     try {
                         // Calculate distance using collision.Vector3
-                        val differenceVector = Vector3(
-                            nodeWorldPos.x - targetWorldPos.x,
-                            nodeWorldPos.y - targetWorldPos.y,
-                            nodeWorldPos.z - targetWorldPos.z
-                        )
-                        val distance = differenceVector.length() // Use length() from collision.Vector3
+                        val nodePosVec = Float3(nodeWorldPos.x, nodeWorldPos.y, nodeWorldPos.z)
+                        val targetPosVec = Float3(targetWorldPos.x, targetWorldPos.y, targetWorldPos.z)
+                        val distance = length(nodePosVec - targetPosVec)
 
                         val collisionThreshold = 0.3f
                         if (distance < collisionThreshold) {
@@ -1435,8 +1437,8 @@ class ArView(
              val outOfBoundsThreshold = 50.0f
              if (!collisionDetected && nodeWorldPos != null) {
                 // Calculate length from origin using collision.Vector3
-                val positionVector = Vector3(nodeWorldPos.x, nodeWorldPos.y, nodeWorldPos.z)
-                 if (positionVector.length() > outOfBoundsThreshold) {
+                val positionVector = Float3(nodeWorldPos.x, nodeWorldPos.y, nodeWorldPos.z)
+                 if (length(positionVector) > outOfBoundsThreshold) {
                      Log.d(TAG, "${node.name} went out of bounds.")
                      nodesToRemove.add(node)
                      collisionDetected = true
@@ -1477,7 +1479,7 @@ class ArView(
             return
         }
 
-        val initialVelocity = Vector3(
+        val initialVelocity = Float3(
             initialVelocityList[0].toFloat(),
             initialVelocityList[1].toFloat(),
             initialVelocityList[2].toFloat()
