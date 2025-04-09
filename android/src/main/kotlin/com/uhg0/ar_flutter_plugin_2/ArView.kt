@@ -60,6 +60,8 @@ import com.google.ar.core.exceptions.SessionPausedException
 import io.github.sceneview.collision.Vector3
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
+import com.uhg0.ar_flutter_plugin_2.Serialization.deserializeMatrixComponents
+import io.github.sceneview.math.Quaternion as SceneQuaternion
 
 class ArView(
     context: Context,
@@ -234,8 +236,9 @@ class ArView(
         if (fileLocation == null) {
             return null
         }
-        val transformation = nodeData["transformation"] as? ArrayList<Double>
-        if (transformation == null) {
+        val transformationList = nodeData["transformation"] as? List<Double>
+        if (transformationList == null || transformationList.size != 16) {
+            Log.e(TAG, "Invalid or missing transformation data (must be List<Double> of size 16)")
             return null
         }
 
@@ -243,7 +246,7 @@ class ArView(
             sceneView.modelLoader.loadModelInstance(fileLocation)?.let { modelInstance ->
                 object : ModelNode(
                     modelInstance = modelInstance,
-                    scaleToUnits = transformation.first().toFloat(),
+                    scaleToUnits = transformationList.first().toFloat(),
                 ) {
                     override fun onMove(detector: MoveGestureDetector, e: MotionEvent): Boolean {
                             if (handlePans) {
@@ -311,7 +314,7 @@ class ArView(
                 null
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Error loading model or creating node: $fileLocation", e)
             null
         }
     }
@@ -679,42 +682,28 @@ class ArView(
     try {
         if (handlePans || handleRotation) {
             val name = call.argument<String>("name")
-            val newTransformation: ArrayList<Double>? = call.argument<ArrayList<Double>>("transformation")
+            val transformationList = call.argument<List<Double>>("transformation")
 
-            if (name == null) {
-                result.error("INVALID_ARGUMENT", "Node name is required", null)
+            if (name == null || transformationList == null) {
+                result.error("INVALID_ARGUMENT", "Node name and transformation list are required", null)
                 return
             }
             nodesMap[name]?.let { node ->
-                newTransformation?.let { transform ->
-                    if (transform.size != 16) {
-                        result.error("INVALID_TRANSFORMATION", "Transformation must be a 4x4 matrix (16 values)", null)
-                        return
-                    }
+                if (transformationList.size != 16) {
+                    result.error("INVALID_TRANSFORMATION", "Transformation must be a 4x4 matrix (16 values)", null)
+                    return@let
+                }
 
-                    node.apply {
-                        transform(
-                            position = ScenePosition(
-                                x = transform[12].toFloat(),
-                                y = transform[13].toFloat(),
-                                z = transform[14].toFloat()
-                            ),
-                            rotation = SceneRotation(
-                                x = kotlin.math.atan2(transform[6].toFloat(), transform[10].toFloat()),
-                                y = kotlin.math.atan2(-transform[2].toFloat(), 
-                                    kotlin.math.sqrt(transform[6].toFloat() * transform[6].toFloat() + 
-                                    transform[10].toFloat() * transform[10].toFloat())),
-                                z = kotlin.math.atan2(transform[1].toFloat(), transform[0].toFloat())
-                            ),
-                            scale = SceneScale(
-                                x = kotlin.math.sqrt((transform[0] * transform[0] + transform[1] * transform[1] + transform[2] * transform[2]).toFloat()),
-                                y = kotlin.math.sqrt((transform[4] * transform[4] + transform[5] * transform[5] + transform[6] * transform[6]).toFloat()),
-                                z = kotlin.math.sqrt((transform[8] * transform[8] + transform[9] * transform[9] + transform[10] * transform[10]).toFloat())
-                            )
-                        )
-                    }
+                try {
+                    val (newPosition, newQuaternion, newScale) = deserializeMatrixComponents(transformationList)
+                    node.position = newPosition
+                    node.quaternion = newQuaternion
+                    node.scale = newScale
                     result.success(null)
-                } ?: result.error("INVALID_TRANSFORMATION", "Transformation is required", null)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error applying transformation changed for node $name", e)
+                    result.error("TRANSFORM_NODE_ERROR", "Error applying transformation: ${e.message}", null)
+                }
             } ?: result.error("NODE_NOT_FOUND", "Node with name $name not found", null)
         }
     } catch (e: Exception) {
