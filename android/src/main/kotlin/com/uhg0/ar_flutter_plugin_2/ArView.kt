@@ -826,7 +826,9 @@ class ArView(
             // Tenter d'obtenir la frame la plus récente peut être plus sûr que .update() ici
             // car .update() peut bloquer ou lancer des exceptions si la session n'est pas prête.
             // Utilisons cameraNode qui est mis à jour par SceneView.
-            val cameraPose: Pose? = sceneView.arFrame?.camera?.displayOrientedPose
+
+            // CORRECTION: Utiliser sceneView.frame au lieu de sceneView.arFrame
+            val cameraPose: Pose? = sceneView.frame?.camera?.displayOrientedPose
             // Alternative: val cameraTransform = sceneView.cameraNode.worldTransform // Matrix
 
             if (cameraPose != null) {
