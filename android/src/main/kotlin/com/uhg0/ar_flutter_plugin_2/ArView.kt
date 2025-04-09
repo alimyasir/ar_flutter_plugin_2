@@ -247,32 +247,44 @@ class ArView(
             Log.e(TAG, "Invalid or missing transformation data (must be List<Double> of size 16)")
             return null
         }
+        val nodeName = nodeData["name"] as? String
 
         return try {
             sceneView.modelLoader.loadModelInstance(fileLocation)?.let { modelInstance ->
-                val node = ModelNode(modelInstance = modelInstance).apply {
-                    name = nodeData["name"] as? String
-                    isPositionEditable = handlePans
-                    isRotationEditable = handleRotation
-                    
+                object : ModelNode(modelInstance = modelInstance) {
+                    init {
+                        this.name = nodeName
+                        isPositionEditable = handlePans
+                        isRotationEditable = handleRotation
+                        try {
+                            val (initialPosition, initialQuaternion, initialScale) = deserializeMatrixComponentsFromList(transformationList)
+                            this.position = ScenePosition(initialPosition.x, initialPosition.y, initialPosition.z)
+                            this.quaternion = SceneQuaternion(initialQuaternion.x, initialQuaternion.y, initialQuaternion.z, initialQuaternion.w)
+                            this.scale = SceneScale(initialScale.x, initialScale.y, initialScale.z)
+                            Log.d(TAG, "Applied initial transform to node ${this.name}")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error applying initial transformation to node $nodeName", e)
+                        }
+                    }
+
                     override fun onMove(detector: MoveGestureDetector, e: MotionEvent): Boolean {
-                            if (handlePans) {
+                        if (handlePans) {
                             val defaultResult = super.onMove(detector, e)
                             objectChannel.invokeMethod("onPanChange", name)
                             return defaultResult
-                            }
-                    return false
+                        }
+                        return false
                     }
-                    
+
                     override fun onMoveBegin(detector: MoveGestureDetector, e: MotionEvent): Boolean {
                         if (handlePans) {
                             val defaultResult = super.onMoveBegin(detector, e)
                             objectChannel.invokeMethod("onPanStart", name)
-                            defaultResult
-                        } 
+                            return defaultResult
+                        }
                         return false
                     }
-                    
+
                     override fun onMoveEnd(detector: MoveGestureDetector, e: MotionEvent) {
                         if (handlePans) {
                             super.onMoveEnd(detector, e)
@@ -313,17 +325,8 @@ class ArView(
                         }
                     }
                 }
-                try {
-                    val (initialPosition, initialQuaternion, initialScale) = deserializeMatrixComponentsFromList(transformationList)
-                    node.position = ScenePosition(initialPosition.x, initialPosition.y, initialPosition.z)
-                    node.quaternion = SceneQuaternion(initialQuaternion.x, initialQuaternion.y, initialQuaternion.z, initialQuaternion.w)
-                    node.scale = SceneScale(initialScale.x, initialScale.y, initialScale.z)
-                    Log.d(TAG, "Applied initial transform to node ${node.name}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error applying transformation changed for node $name", e)
-                }
-                node
             } ?: run {
+                Log.e(TAG, "Failed to load model instance for: $fileLocation")
                 null
             }
         } catch (e: Exception) {
@@ -689,40 +692,40 @@ class ArView(
     }
 
     private fun handleTransformNode(
-    call: MethodCall,
-    result: MethodChannel.Result,
-) {
-    try {
-        if (handlePans || handleRotation) {
-            val name = call.argument<String>("name")
-            val transformationList = call.argument<List<Double>>("transformation")
+        call: MethodCall,
+        result: MethodChannel.Result,
+    ) {
+        try {
+            if (handlePans || handleRotation) {
+                val name = call.argument<String>("name")
+                val transformationList = call.argument<List<Double>>("transformation")
 
-            if (name == null || transformationList == null) {
-                result.error("INVALID_ARGUMENT", "Node name and transformation list are required", null)
-                return
+                if (name == null || transformationList == null) {
+                    result.error("INVALID_ARGUMENT", "Node name and transformation list are required", null)
+                    return
+                }
+                nodesMap[name]?.let { node ->
+                    if (transformationList.size != 16) {
+                        result.error("INVALID_TRANSFORMATION", "Transformation must be a 4x4 matrix (16 values)", null)
+                        return@let
+                    }
+
+                    try {
+                        val (newPosition, newQuaternion, newScale) = deserializeMatrixComponentsFromList(transformationList)
+                        node.position = ScenePosition(newPosition.x, newPosition.y, newPosition.z)
+                        node.quaternion = SceneQuaternion(newQuaternion.x, newQuaternion.y, newQuaternion.z, newQuaternion.w)
+                        node.scale = SceneScale(newScale.x, newScale.y, newScale.z)
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error applying transformation changed for node $name", e)
+                        result.error("TRANSFORM_NODE_ERROR", "Error applying transformation: ${e.message}", null)
+                    }
+                } ?: result.error("NODE_NOT_FOUND", "Node with name $name not found", null)
             }
-            nodesMap[name]?.let { node ->
-                if (transformationList.size != 16) {
-                    result.error("INVALID_TRANSFORMATION", "Transformation must be a 4x4 matrix (16 values)", null)
-                    return@let
-                }
-
-                try {
-                    val (newPosition, newQuaternion, newScale) = deserializeMatrixComponentsFromList(transformationList)
-                    node.position = ScenePosition(newPosition.x, newPosition.y, newPosition.z)
-                    node.quaternion = SceneQuaternion(newQuaternion.x, newQuaternion.y, newQuaternion.z, newQuaternion.w)
-                    node.scale = SceneScale(newScale.x, newScale.y, newScale.z)
-                    result.success(null)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error applying transformation changed for node $name", e)
-                    result.error("TRANSFORM_NODE_ERROR", "Error applying transformation: ${e.message}", null)
-                }
-            } ?: result.error("NODE_NOT_FOUND", "Node with name $name not found", null)
+        } catch (e: Exception) {
+            result.error("TRANSFORM_NODE_ERROR", e.message, null)
         }
-    } catch (e: Exception) {
-        result.error("TRANSFORM_NODE_ERROR", e.message, null)
     }
-}
 
     private fun handleHostCloudAnchor(
         call: MethodCall,
@@ -970,11 +973,13 @@ class ArView(
                         val anchor = sceneView.session?.createAnchor(pose)
                         if (anchor != null) {
                             val anchorNode = AnchorNode(sceneView.engine, anchor)
-                            try {
-                                val transformMatrix = Mat4.fromRotation(quaternion) * Mat4.translation(position)
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Transform assignment warning suppressed: ${e.message}")
-                            }
+                            // Commenté car la transformation est gérée par l'ancre ARCore elle-même
+                            // try {
+                            //     // Correction : Utiliser les méthodes compagnons de Mat4 pour la création
+                            //     val transformMatrix = Mat4.translation(position) * Mat4.rotation(quaternion)
+                            // } catch (e: Exception) {
+                            //     Log.w(TAG, "Transform assignment warning suppressed: ${e.message}")
+                            // }
 
                             sceneView.addChildNode(anchorNode)
                             anchorNodesMap[name] = anchorNode
@@ -988,7 +993,8 @@ class ArView(
                     }
                 } else {
                     result.error("INVALID_ARGUMENTS", "Name and valid transformation list required", null)
-                    result.success(false)
+                    // Consistence : renvoyer une erreur si les args sont invalides
+                    // result.success(false)
                 }
             } else {
                 result.success(false)
@@ -1358,7 +1364,7 @@ class ArView(
         }
     }
 
-    // ++ PHYSICS UPDATE FUNCTION USING collision.Vector3 ++
+    // ++ PHYSICS UPDATE FUNCTION USING dev.romainguy.kotlin.math.Float3 ++
     private fun updatePhysics(currentTimestamp: Long) {
         if (activePhysicsNodes.isEmpty()) {
              lastFrameTimestamp = currentTimestamp
@@ -1386,7 +1392,7 @@ class ArView(
             val scaledGravity = gravity * deltaTime
             val newVelocity = velocity + scaledGravity
 
-            // 2. Update Position using Vector3 methods
+            // 2. Update Position
             val displacement = newVelocity * deltaTime
             node.position = ScenePosition(
                 node.position.x + displacement.x,
@@ -1397,14 +1403,18 @@ class ArView(
             // 3. Update Velocity in Map
             activePhysicsNodes[node] = newVelocity
 
-            // 4. Basic Collision Detection using Vector3 methods
+            // 4. Basic Collision Detection
             var collisionDetected = false
             targetNodes.forEach { (targetName, targetNode) ->
                  val nodeWorldPos = node.worldPosition
                  val targetWorldPos = targetNode.worldPosition
                  if (nodeWorldPos != null && targetWorldPos != null) {
                     try {
-                        val distance = length(nodeWorldPos - targetWorldPos)
+                        // Correction: Convertir les positions SceneView en Float3 pour le calcul
+                        val nodePosVec = Float3(nodeWorldPos.x, nodeWorldPos.y, nodeWorldPos.z)
+                        val targetPosVec = Float3(targetWorldPos.x, targetWorldPos.y, targetWorldPos.z)
+                        // Utiliser length et l'opérateur - de romainguy.math
+                        val distance = length(nodePosVec - targetPosVec)
 
                         val collisionThreshold = 0.3f
                         if (distance < collisionThreshold) {
@@ -1431,11 +1441,13 @@ class ArView(
                 collisionDetected = true
             }
 
-             // 6. Check for out of bounds using Vector3 length
+             // 6. Check for out of bounds
              val nodeWorldPos = node.worldPosition
              val outOfBoundsThreshold = 50.0f
              if (!collisionDetected && nodeWorldPos != null) {
-                if (length(nodeWorldPos) > outOfBoundsThreshold) {
+                // Correction: Convertir en Float3 pour length
+                val positionVector = Float3(nodeWorldPos.x, nodeWorldPos.y, nodeWorldPos.z)
+                if (length(positionVector) > outOfBoundsThreshold) {
                      Log.d(TAG, "${node.name} went out of bounds.")
                      nodesToRemove.add(node)
                      collisionDetected = true
@@ -1463,7 +1475,7 @@ class ArView(
     }
     // -- END OF PHYSICS UPDATE FUNCTION --
 
-    // ++ FUNCTION TO START PHYSICS USING collision.Vector3 ++
+    // ++ FUNCTION TO START PHYSICS USING dev.romainguy.kotlin.math.Float3 ++
     private fun handleStartPhysics(nodeName: String?, initialVelocityList: List<Double>?, result: MethodChannel.Result) {
         if (nodeName == null || initialVelocityList == null || initialVelocityList.size != 3) {
             result.error("INVALID_ARGUMENTS", "nodeName and initialVelocity (List<Double> with 3 elements) are required.", null)
