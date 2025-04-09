@@ -60,6 +60,7 @@ import com.google.ar.core.exceptions.SessionPausedException
 import io.github.sceneview.math.Float3
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
+import io.github.sceneview.math.distanceTo
 
 class ArView(
     context: Context,
@@ -455,38 +456,38 @@ class ArView(
                                     }
                                 }
 
-                                if (showFeaturePoints) {
-                                    val currentFps = frame.fps(lastPointCloudFrame)
-                                    if (currentFps < 10) {
-                                        frame.acquirePointCloud()?.let { pointCloud ->
-                                            if (pointCloud.timestamp != lastPointCloudTimestamp) {
-                                                lastPointCloudFrame = frame
-                                                lastPointCloudTimestamp = pointCloud.timestamp
+                            if (showFeaturePoints) {
+                                val currentFps = frame.fps(lastPointCloudFrame)
+                                if (currentFps < 10) {
+                                    frame.acquirePointCloud()?.let { pointCloud ->
+                                        if (pointCloud.timestamp != lastPointCloudTimestamp) {
+                                            lastPointCloudFrame = frame
+                                            lastPointCloudTimestamp = pointCloud.timestamp
 
-                                                val pointsSize = pointCloud.ids?.limit() ?: 0
+                                            val pointsSize = pointCloud.ids?.limit() ?: 0
 
-                                                if (pointCloudNodes.isNotEmpty()) {
-                                                }
-                                                pointCloudNodes.toList().forEach { removePointCloudNode(it) }
-
-                                                val pointsBuffer = pointCloud.points
-                                                for (index in 0 until pointsSize) {
-                                                    val pointIndex = index * 4
-                                                    val position =
-                                                        Position(
-                                                            pointsBuffer[pointIndex],
-                                                            pointsBuffer[pointIndex + 1],
-                                                            pointsBuffer[pointIndex + 2],
-                                                        )
-                                                    val confidence = pointsBuffer[pointIndex + 3]
-                                                    addPointCloudNode(index, position, confidence)
-                                                }
-
-                                                pointCloud.release()
+                                            if (pointCloudNodes.isNotEmpty()) {
                                             }
+                                            pointCloudNodes.toList().forEach { removePointCloudNode(it) }
+
+                                            val pointsBuffer = pointCloud.points
+                                            for (index in 0 until pointsSize) {
+                                                val pointIndex = index * 4
+                                                val position =
+                                                    Position(
+                                                        pointsBuffer[pointIndex],
+                                                        pointsBuffer[pointIndex + 1],
+                                                        pointsBuffer[pointIndex + 2],
+                                                    )
+                                                val confidence = pointsBuffer[pointIndex + 3]
+                                                addPointCloudNode(index, position, confidence)
+                                            }
+
+                                            pointCloud.release()
                                         }
                                     }
                                 }
+                            }
 
                                 updatePhysics(frame.timestamp)
 
@@ -514,7 +515,7 @@ class ArView(
                             }
                         }
                     }
-                 }
+                }
 
                 setOnGestureListener(
                     onSingleTapConfirmed = { motionEvent: MotionEvent, node: Node? ->
@@ -1365,28 +1366,25 @@ class ArView(
     // ++ NEW PHYSICS UPDATE FUNCTION ++
     private fun updatePhysics(currentTimestamp: Long) {
         if (activePhysicsNodes.isEmpty()) {
-             lastFrameTimestamp = currentTimestamp // Keep updating timestamp even if no physics nodes
-             return // No physics objects to update
+             lastFrameTimestamp = currentTimestamp
+             return
         }
 
         if (lastFrameTimestamp == 0L) {
             lastFrameTimestamp = currentTimestamp
-            return // Can't calculate deltaTime on the first frame
+            return
         }
 
-        // Calculate deltaTime in seconds
         val deltaTime = (currentTimestamp - lastFrameTimestamp) / 1_000_000_000.0f
         lastFrameTimestamp = currentTimestamp
 
-        // Prevent unstable simulation with large or invalid deltaTime
-        if (deltaTime <= 0 || deltaTime > 0.5f) { // Max deltaTime threshold (e.g., 0.5 seconds)
+        if (deltaTime <= 0 || deltaTime > 0.5f) {
              Log.w(TAG, "Skipping physics update due to invalid deltaTime: $deltaTime")
              return
         }
 
-
         val nodesToRemove = mutableListOf<Node>()
-        val collisionEventsToSend = mutableMapOf<String, String?>() // Map<nodeName, collidedWithNodeName?>
+        val collisionEventsToSend = mutableMapOf<String, String?>()
 
         activePhysicsNodes.forEach { (node, velocity) ->
             // 1. Apply Gravity
@@ -1394,68 +1392,71 @@ class ArView(
 
             // 2. Update Position
             val displacement = newVelocity * deltaTime
-            node.position = node.position + displacement // Update node position in scene
+            node.position = node.position + displacement
 
             // 3. Update Velocity in Map
-            activePhysicsNodes[node] = newVelocity // Store updated velocity
+            activePhysicsNodes[node] = newVelocity
 
-            // 4. Basic Collision Detection (Example: distance check with target nodes)
+            // 4. Basic Collision Detection
             var collisionDetected = false
             targetNodes.forEach { (targetName, targetNode) ->
-                 // Ensure nodes are valid and have world positions calculated
-                 if (node.isAttached && targetNode.isAttached) {
+                 // Corrected: Remove isAttached check, check worldPosition validity instead (optional)
+                 // Node world positions might be null if not fully initialized/rendered? Be cautious.
+                 val nodeWorldPos = node.worldPosition
+                 val targetWorldPos = targetNode.worldPosition
+                 if (nodeWorldPos != null && targetWorldPos != null) {
                     try {
-                        val distance = node.worldPosition.distanceTo(targetNode.worldPosition)
-                        val collisionThreshold = 0.3f // Adjust as needed (sum of radii approx)
+                        val distance = nodeWorldPos.distanceTo(targetWorldPos)
+                        val collisionThreshold = 0.3f
                         if (distance < collisionThreshold) {
                             Log.d(TAG, "Collision detected: ${node.name} hit ${targetName}")
-                            nodesToRemove.add(node) // Mark this node for removal from physics simulation
-                            collisionEventsToSend[node.name!!] = targetName // Record collision event
+                            nodesToRemove.add(node)
+                            // node.name should not be null if added correctly
+                            collisionEventsToSend[node.name!!] = targetName
                             collisionDetected = true
-                            return@forEach // Stop checking other targets for this node
+                            return@forEach // Exit targetNodes.forEach for this projectile
                         }
                     } catch (e: Exception) {
                          Log.e(TAG, "Error calculating distance between ${node.name} and $targetName: ${e.message}")
-                         // Handle cases where worldPosition might not be ready?
                     }
-                }
+                 } else {
+                      Log.w(TAG, "Skipping collision check: worldPosition not available for ${node.name} or $targetName")
+                 }
             }
 
-            // 5. Optional: Check for collision with ground (e.g., if Y position goes below 0)
-            if (!collisionDetected && node.worldPosition.y < -1.0f) { // Adjust threshold as needed
+            // 5. Check for ground collision
+            val nodeWorldPosY = node.worldPosition?.y
+            if (!collisionDetected && nodeWorldPosY != null && nodeWorldPosY < -1.0f) {
                 Log.d(TAG, "Collision detected: ${node.name} hit ground")
                 nodesToRemove.add(node)
-                collisionEventsToSend[node.name!!] = null // null indicates collision with environment/boundary
+                collisionEventsToSend[node.name!!] = null
                 collisionDetected = true
             }
 
-             // 6. Optional: Check if node went too far (out of bounds)
+             // 6. Check for out of bounds
+             val nodeWorldPos = node.worldPosition
              val outOfBoundsThreshold = 50.0f
-             if (!collisionDetected && node.worldPosition.length > outOfBoundsThreshold) {
+             if (!collisionDetected && nodeWorldPos != null && nodeWorldPos.length > outOfBoundsThreshold) {
                  Log.d(TAG, "${node.name} went out of bounds.")
                  nodesToRemove.add(node)
-                 // Optionally send an event or just remove silently
-                 // collisionEventsToSend[node.name!!] = "__OUT_OF_BOUNDS__"
                  collisionDetected = true
              }
         }
 
-        // Remove nodes that collided or went out of bounds from the physics simulation
         nodesToRemove.forEach { node ->
             activePhysicsNodes.remove(node)
-            // Optionally, you might want to remove the node from the scene entirely
-            // or just stop its physics simulation. Removing it from activePhysicsNodes stops simulation.
-            // sceneView.removeChildNode(node) // Uncomment to remove from scene on collision
-            // nodesMap.remove(node.name)      // Also remove from main map if removing from scene
+            // Decide if you want to remove the node visually from the scene upon collision
+            // sceneView.removeChildNode(node)
+            // nodesMap.remove(node.name) // Remove from main tracking map if removing from scene
         }
 
-        // Send collision events back to Flutter if any occurred
         if (collisionEventsToSend.isNotEmpty()) {
              mainScope.launch {
+                 // Corrected: Use Map.forEach with key-value destructuring
                  collisionEventsToSend.forEach { (nodeName, collidedWithNodeName) ->
                      objectChannel.invokeMethod("onPhysicsNodeCollision", mapOf(
                          "nodeName" to nodeName,
-                         "collidedWithNodeName" to collidedWithNodeName // Can be null
+                         "collidedWithNodeName" to collidedWithNodeName
                      ))
                  }
              }
@@ -1470,7 +1471,8 @@ class ArView(
             return
         }
 
-        val node = nodesMap[nodeName] // Get the Node from the map
+        // Use Node type, as nodesMap might contain different types in the future
+        val node: Node? = nodesMap[nodeName] // Get the Node (might be ModelNode or other)
         if (node == null) {
             result.error("NODE_NOT_FOUND", "Node with name '$nodeName' not found.", null)
             return
@@ -1482,10 +1484,9 @@ class ArView(
             initialVelocityList[2].toFloat()
         )
 
-        // Add the node and its initial velocity to start the simulation
         activePhysicsNodes[node] = initialVelocity
         Log.d(TAG,"Physics started for node '${node.name}' with initial velocity $initialVelocity")
-        result.success(null) // Indicate success
+        result.success(null)
     }
     // -- END OF FUNCTION TO START PHYSICS --
 }
