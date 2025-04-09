@@ -57,6 +57,9 @@ import io.github.sceneview.math.Scale
 import io.github.sceneview.math.colorOf
 import io.github.sceneview.loaders.MaterialLoader
 import com.google.ar.core.exceptions.SessionPausedException
+import io.github.sceneview.math.Float3
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.sqrt
 
 class ArView(
     context: Context,
@@ -87,9 +90,20 @@ class ArView(
     private var lastPointCloudTimestamp: Long? = null
     private var lastPointCloudFrame: Frame? = null
     private var pointCloudModelInstances = mutableListOf<ModelInstance>()
-    private var handlePans = false  
+    private var handlePans = false
     private var handleRotation = false
     private var isSessionPaused = false
+
+    // ++ NEW PROPERTIES FOR PHYSICS ++
+    // Map to store nodes currently undergoing physics simulation and their velocities
+    private val activePhysicsNodes = ConcurrentHashMap<Node, Float3>()
+    // Gravity vector (adjust Y value as needed for desired effect)
+    private val gravity = Float3(0.0f, -9.8f, 0.0f) // m/s^2
+    // Map to store potential target nodes (if needed for collision)
+    private val targetNodes = ConcurrentHashMap<String, Node>() // Using ConcurrentHashMap for potential modifications from different threads
+    // Timestamp of the last frame for deltaTime calculation
+    private var lastFrameTimestamp: Long = 0
+    // -- END OF NEW PROPERTIES --
 
     private class PointCloudNode(
         modelInstance: ModelInstance,
@@ -137,6 +151,11 @@ class ArView(
                     nodeData?.let {
                         handleAddNode(it, result)
                     } ?: result.error("INVALID_ARGUMENTS", "Node data is required", null)
+                }
+                "startPhysics" -> {
+                    val nodeName = call.argument<String>("nodeName")
+                    val initialVelocityList = call.argument<List<Double>>("initialVelocity")
+                    handleStartPhysics(nodeName, initialVelocityList, result)
                 }
                 "addNodeToPlaneAnchor" -> handleAddNodeToPlaneAnchor(call, result)
                 "addNodeToScreenPosition" -> handleAddNodeToScreenPosition(call, result)
@@ -469,6 +488,8 @@ class ArView(
                                     }
                                 }
 
+                                updatePhysics(frame.timestamp)
+
                                 frame.getUpdatedTrackables(Plane::class.java).forEach { plane ->
                                     if (plane.trackingState == TrackingState.TRACKING &&
                                         !detectedPlanes.contains(plane)
@@ -493,7 +514,7 @@ class ArView(
                             }
                         }
                     }
-                }
+                 }
 
                 setOnGestureListener(
                     onSingleTapConfirmed = { motionEvent: MotionEvent, node: Node? ->
@@ -592,6 +613,11 @@ class ArView(
                     sceneView.addChildNode(node)
                     node.name?.let { nodeName ->
                         nodesMap[nodeName] = node
+                         // Check if this node should be a target for collisions
+                         if (nodeName.startsWith("target_")) { // Example naming convention
+                             targetNodes[nodeName] = node
+                             Log.d(TAG, "Target node added: $nodeName")
+                         }
                     }
                     result.success(true)
                 } else {
@@ -620,6 +646,11 @@ class ArView(
             Log.d(TAG, "Current nodes in map: ${nodesMap.keys}")
             
             nodesMap[nodeName]?.let { node ->
+                // ++ ADD cleanup from physics simulation ++
+                activePhysicsNodes.remove(node)
+                targetNodes.remove(nodeName) // Also remove if it was a target
+                // -- END cleanup --
+
                 // Détacher d'abord le nœud de son parent s'il en a un
                 node.parent?.removeChildNode(node)
                 // Puis le retirer de la scène principale
@@ -1141,6 +1172,10 @@ class ArView(
 
     override fun dispose() {
         Log.i(TAG, "dispose")
+        // ++ ADD cleanup ++
+        activePhysicsNodes.clear()
+        targetNodes.clear()
+        // -- END cleanup --
         sessionChannel.setMethodCallHandler(null)
         objectChannel.setMethodCallHandler(null)
         anchorChannel.setMethodCallHandler(null)
@@ -1327,5 +1362,130 @@ class ArView(
         }
     }
 
-    
+    // ++ NEW PHYSICS UPDATE FUNCTION ++
+    private fun updatePhysics(currentTimestamp: Long) {
+        if (activePhysicsNodes.isEmpty()) {
+             lastFrameTimestamp = currentTimestamp // Keep updating timestamp even if no physics nodes
+             return // No physics objects to update
+        }
+
+        if (lastFrameTimestamp == 0L) {
+            lastFrameTimestamp = currentTimestamp
+            return // Can't calculate deltaTime on the first frame
+        }
+
+        // Calculate deltaTime in seconds
+        val deltaTime = (currentTimestamp - lastFrameTimestamp) / 1_000_000_000.0f
+        lastFrameTimestamp = currentTimestamp
+
+        // Prevent unstable simulation with large or invalid deltaTime
+        if (deltaTime <= 0 || deltaTime > 0.5f) { // Max deltaTime threshold (e.g., 0.5 seconds)
+             Log.w(TAG, "Skipping physics update due to invalid deltaTime: $deltaTime")
+             return
+        }
+
+
+        val nodesToRemove = mutableListOf<Node>()
+        val collisionEventsToSend = mutableMapOf<String, String?>() // Map<nodeName, collidedWithNodeName?>
+
+        activePhysicsNodes.forEach { (node, velocity) ->
+            // 1. Apply Gravity
+            val newVelocity = velocity + gravity * deltaTime
+
+            // 2. Update Position
+            val displacement = newVelocity * deltaTime
+            node.position = node.position + displacement // Update node position in scene
+
+            // 3. Update Velocity in Map
+            activePhysicsNodes[node] = newVelocity // Store updated velocity
+
+            // 4. Basic Collision Detection (Example: distance check with target nodes)
+            var collisionDetected = false
+            targetNodes.forEach { (targetName, targetNode) ->
+                 // Ensure nodes are valid and have world positions calculated
+                 if (node.isAttached && targetNode.isAttached) {
+                    try {
+                        val distance = node.worldPosition.distanceTo(targetNode.worldPosition)
+                        val collisionThreshold = 0.3f // Adjust as needed (sum of radii approx)
+                        if (distance < collisionThreshold) {
+                            Log.d(TAG, "Collision detected: ${node.name} hit ${targetName}")
+                            nodesToRemove.add(node) // Mark this node for removal from physics simulation
+                            collisionEventsToSend[node.name!!] = targetName // Record collision event
+                            collisionDetected = true
+                            return@forEach // Stop checking other targets for this node
+                        }
+                    } catch (e: Exception) {
+                         Log.e(TAG, "Error calculating distance between ${node.name} and $targetName: ${e.message}")
+                         // Handle cases where worldPosition might not be ready?
+                    }
+                }
+            }
+
+            // 5. Optional: Check for collision with ground (e.g., if Y position goes below 0)
+            if (!collisionDetected && node.worldPosition.y < -1.0f) { // Adjust threshold as needed
+                Log.d(TAG, "Collision detected: ${node.name} hit ground")
+                nodesToRemove.add(node)
+                collisionEventsToSend[node.name!!] = null // null indicates collision with environment/boundary
+                collisionDetected = true
+            }
+
+             // 6. Optional: Check if node went too far (out of bounds)
+             val outOfBoundsThreshold = 50.0f
+             if (!collisionDetected && node.worldPosition.length > outOfBoundsThreshold) {
+                 Log.d(TAG, "${node.name} went out of bounds.")
+                 nodesToRemove.add(node)
+                 // Optionally send an event or just remove silently
+                 // collisionEventsToSend[node.name!!] = "__OUT_OF_BOUNDS__"
+                 collisionDetected = true
+             }
+        }
+
+        // Remove nodes that collided or went out of bounds from the physics simulation
+        nodesToRemove.forEach { node ->
+            activePhysicsNodes.remove(node)
+            // Optionally, you might want to remove the node from the scene entirely
+            // or just stop its physics simulation. Removing it from activePhysicsNodes stops simulation.
+            // sceneView.removeChildNode(node) // Uncomment to remove from scene on collision
+            // nodesMap.remove(node.name)      // Also remove from main map if removing from scene
+        }
+
+        // Send collision events back to Flutter if any occurred
+        if (collisionEventsToSend.isNotEmpty()) {
+             mainScope.launch {
+                 collisionEventsToSend.forEach { (nodeName, collidedWithNodeName) ->
+                     objectChannel.invokeMethod("onPhysicsNodeCollision", mapOf(
+                         "nodeName" to nodeName,
+                         "collidedWithNodeName" to collidedWithNodeName // Can be null
+                     ))
+                 }
+             }
+        }
+    }
+    // -- END OF PHYSICS UPDATE FUNCTION --
+
+    // ++ NEW FUNCTION TO START PHYSICS ++
+    private fun handleStartPhysics(nodeName: String?, initialVelocityList: List<Double>?, result: MethodChannel.Result) {
+        if (nodeName == null || initialVelocityList == null || initialVelocityList.size != 3) {
+            result.error("INVALID_ARGUMENTS", "nodeName and initialVelocity (List<Double> with 3 elements) are required.", null)
+            return
+        }
+
+        val node = nodesMap[nodeName] // Get the Node from the map
+        if (node == null) {
+            result.error("NODE_NOT_FOUND", "Node with name '$nodeName' not found.", null)
+            return
+        }
+
+        val initialVelocity = Float3(
+            initialVelocityList[0].toFloat(),
+            initialVelocityList[1].toFloat(),
+            initialVelocityList[2].toFloat()
+        )
+
+        // Add the node and its initial velocity to start the simulation
+        activePhysicsNodes[node] = initialVelocity
+        Log.d(TAG,"Physics started for node '${node.name}' with initial velocity $initialVelocity")
+        result.success(null) // Indicate success
+    }
+    // -- END OF FUNCTION TO START PHYSICS --
 }

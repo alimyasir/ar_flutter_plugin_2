@@ -14,6 +14,7 @@ typedef NodePanEndHandler = void Function(String node, Matrix4 transform);
 typedef NodeRotationStartHandler = void Function(String node);
 typedef NodeRotationChangeHandler = void Function(String node);
 typedef NodeRotationEndHandler = void Function(String node, Matrix4 transform);
+typedef PhysicsNodeCollisionHandler = void Function(String nodeName, String? collidedWithNodeName);
 
 /// Manages the all node-related actions of an [ARView]
 class ARObjectManager {
@@ -31,6 +32,7 @@ class ARObjectManager {
   NodeRotationStartHandler? onRotationStart;
   NodeRotationChangeHandler? onRotationChange;
   NodeRotationEndHandler? onRotationEnd;
+  PhysicsNodeCollisionHandler? onPhysicsNodeCollision;
 
   ARObjectManager(int id, {this.debug = false}) {
     _channel = MethodChannel('arobjects_$id');
@@ -103,6 +105,14 @@ class ARObjectManager {
             onRotationEnd!(tappedNodeName, transform);
           }
           break;
+        case 'onPhysicsNodeCollision':
+          if (onPhysicsNodeCollision != null) {
+            final collisionData = call.arguments as Map<dynamic, dynamic>;
+            final String nodeName = collisionData['nodeName'];
+            final String? collidedWithNodeName = collisionData['collidedWithNodeName'];
+            onPhysicsNodeCollision!(nodeName, collidedWithNodeName);
+          }
+          break;
         default:
           if (debug) {
             print('Unimplemented method ${call.method} ');
@@ -144,5 +154,28 @@ class ARObjectManager {
   /// Remove given node from the AR Scene
   removeNode(ARNode node) {
     _channel.invokeMethod<String>('removeNode', {'name': node.name});
+  }
+
+  /// Starts the physics simulation for the specified node with an initial velocity.
+  /// The node must have been previously added using [addNode].
+  ///
+  /// [nodeName]: The unique name of the node to start physics for.
+  /// [initialVelocity]: The initial velocity vector (in m/s) in world coordinates.
+  Future<void> startPhysics(String nodeName, Vector3 initialVelocity) async {
+    if (nodeName.isEmpty) {
+      print("❌ Error: nodeName cannot be empty for startPhysics.");
+      return;
+    }
+    try {
+      await _channel.invokeMethod('startPhysics', {
+        'nodeName': nodeName,
+        'initialVelocity': [initialVelocity.x, initialVelocity.y, initialVelocity.z],
+      });
+      if (debug) {
+        print("🚀 Physics started for '$nodeName' with velocity $initialVelocity");
+      }
+    } on PlatformException catch (e) {
+      print("❌ Failed to start physics for node '$nodeName': ${e.message}");
+    }
   }
 }
