@@ -209,41 +209,45 @@ class ArView(
     
 
     private suspend fun buildModelNode(nodeData: Map<String, Any>): ModelNode? {
-        var fileLocation = nodeData["uri"] as? String ?: return null
-        when (nodeData["type"] as Int) {
-                0 -> { // GLTF2 Model from Flutter asset folder
-                    // Get path to given Flutter asset
-                    val loader = FlutterInjector.instance().flutterLoader()
-                    fileLocation = loader.getLookupKeyForAsset(fileLocation)
-                }
-                1 -> { // GLB Model from the web
-                    fileLocation = fileLocation
-                }
-                2 -> { // fileSystemAppFolderGLB
-                    fileLocation = fileLocation
-                }
-                 3 -> { //fileSystemAppFolderGLTF2
-                    val documentsPath = viewContext.getApplicationInfo().dataDir
-                    val fileLocation = documentsPath + "/app_flutter/" + nodeData["uri"] as String
-                 }
-                else -> {
-                    return null
-                }
-        }
-        
-        if (fileLocation == null) {
-            return null
-        }
-        val transformation = nodeData["transformation"] as? ArrayList<Double>
-        if (transformation == null) {
-            return null
-        }
+        val fileLocation = nodeData["uri"] as? String ?: return null
+        // Obtenir la liste de transformation (matrice)
+        val transformation = nodeData["transformation"] as? ArrayList<Double> ?: return null
+
+        // Déterminer le type pour le chargement (le code existant est bon pour ça)
+        val nodeTypeIndex = nodeData["type"] as? Int ?: return null
+        val finalFileLocation = when (nodeTypeIndex) {
+            0 -> { // GLTF2 Model from Flutter asset folder
+                val loader = FlutterInjector.instance().flutterLoader()
+                loader.getLookupKeyForAsset(fileLocation)
+            }
+            1 -> { // GLB Model from the web
+                fileLocation
+            }
+            2 -> { // fileSystemAppFolderGLB
+                fileLocation
+            }
+            3 -> { //fileSystemAppFolderGLTF2
+                val documentsPath = viewContext.getApplicationInfo().dataDir
+                documentsPath + "/app_flutter/" + fileLocation
+            }
+            else -> {
+                Log.e(TAG, "Unsupported node type index: $nodeTypeIndex")
+                return null
+            }
+        } ?: return null // Retourne null si le chemin final n'est pas déterminé
+
 
         return try {
-            sceneView.modelLoader.loadModelInstance(fileLocation)?.let { modelInstance ->
+            // Charger l'instance du modèle
+            sceneView.modelLoader.loadModelInstance(finalFileLocation)?.let { modelInstance ->
+
+                // Désérialiser la position et la rotation depuis la matrice reçue
+                val (initialPosition, initialRotation) = deserializeMatrix4(transformation)
+
+                // Créer le nœud ModelNode
                 object : ModelNode(
                     modelInstance = modelInstance,
-                    scaleToUnits = transformation.first().toFloat(),
+                    // Ne pas utiliser scaleToUnits ici si l'échelle est déjà dans la matrice
                 ) {
                     override fun onMove(detector: MoveGestureDetector, e: MotionEvent): Boolean {
                             if (handlePans) {
@@ -253,16 +257,16 @@ class ArView(
                             }
                     return false
                     }
-                    
+
                     override fun onMoveBegin(detector: MoveGestureDetector, e: MotionEvent): Boolean {
                         if (handlePans) {
                             val defaultResult = super.onMoveBegin(detector, e)
                             objectChannel.invokeMethod("onPanStart", name)
-                            defaultResult
-                        } 
+                           return defaultResult // Retourner le résultat de super
+                        }
                         return false
                     }
-                    
+
                     override fun onMoveEnd(detector: MoveGestureDetector, e: MotionEvent) {
                         if (handlePans) {
                             super.onMoveEnd(detector, e)
@@ -302,16 +306,25 @@ class ArView(
                             objectChannel.invokeMethod("onRotationEnd", transformMap)
                         }
                     }
-                }.apply {
+
+                }.apply { // Bloc après création
+                    // Appliquer la position et la rotation initiales !
+                    this.position = initialPosition
+                    this.rotation = initialRotation // Appliquer la rotation désérialisée
+                    // Alternativement, si deserializeMatrix4 renvoie un Quaternion:
+                    // this.quaternion = initialQuaternion
+
+                    // Appliquer les autres propriétés
                     isPositionEditable = handlePans
                     isRotationEditable = handleRotation
-                    name = nodeData["name"] as? String
+                    name = nodeData["name"] as? String // Appliquer le nom
                 }
             } ?: run {
+                Log.e(TAG, "Failed to load model instance from: $finalFileLocation")
                 null
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+             Log.e(TAG, "Error building model node for uri: $fileLocation", e)
             null
         }
     }
