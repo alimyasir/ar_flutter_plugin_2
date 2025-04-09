@@ -15,7 +15,6 @@ import dev.romainguy.kotlin.math.Float4
 import dev.romainguy.kotlin.math.normalize
 import dev.romainguy.kotlin.math.length
 import dev.romainguy.kotlin.math.Mat3
-import dev.romainguy.kotlin.math.rotation
 // --- Fin Imports ---
 
 import kotlin.math.sqrt
@@ -71,8 +70,8 @@ fun deserializeMatrix4(transform: List<Double>): Pair<Float3, Quaternion> {
         throw IllegalArgumentException("Transformation list must have 16 elements.")
     }
     val matrixArray = transform.map { it.toFloat() }.toFloatArray()
-    // Correction: Utiliser Mat4.fromColumnMajor avec spread operator
-    val mat4 = Mat4.fromColumnMajor(*matrixArray)
+    // Correction: Utiliser le constructeur standard
+    val mat4 = Mat4(matrixArray)
 
     // Position
     val position = Float3(mat4[3].x, mat4[3].y, mat4[3].z)
@@ -92,11 +91,14 @@ fun deserializeMatrix4(transform: List<Double>): Pair<Float3, Quaternion> {
         Float4(mat4[2].xyz / safeScaleZ, 0f),
         Float4(0f, 0f, 0f, 1f)
     )
-    // Correction: Extraire Mat3 et convertir en Quaternion via la fonction utilitaire
-    val rotationMat3: Mat3 = rotation(rotMat) // Extrait la sous-matrice 3x3
-    val rotationQuaternion = mat3ToQuaternion(rotationMat3) // Utilise la fonction de conversion
+    // Correction: Utiliser la construction manuelle de Mat3 (Tentative 2)
+    val rotationMat3 = Mat3(
+        rotMat[0].x, rotMat[0].y, rotMat[0].z,
+        rotMat[1].x, rotMat[1].y, rotMat[1].z,
+        rotMat[2].x, rotMat[2].y, rotMat[2].z
+    )
 
-    // normalize est déjà fait dans mat3ToQuaternion
+    val rotationQuaternion = mat3ToQuaternion(rotationMat3)
     return Pair(position, rotationQuaternion)
 }
 
@@ -107,8 +109,8 @@ fun deserializeMatrixComponentsFromList(transform: List<Double>): Triple<Float3,
     }
 
     val matrixArray = transform.map { it.toFloat() }.toFloatArray()
-    // Correction: Utiliser Mat4.fromColumnMajor avec spread operator
-    val mat4 = Mat4.fromColumnMajor(*matrixArray)
+    // Correction: Utiliser le constructeur standard
+    val mat4 = Mat4(matrixArray)
 
     // Position
     val position = Float3(mat4[3].x, mat4[3].y, mat4[3].z)
@@ -130,10 +132,13 @@ fun deserializeMatrixComponentsFromList(transform: List<Double>): Triple<Float3,
         Float4(mat4[2].xyz / safeScaleZ, 0f),
         Float4(0f, 0f, 0f, 1f)
     )
-    // Correction: Extraire Mat3 et convertir en Quaternion via la fonction utilitaire
-    val rotationMat3: Mat3 = rotation(rotMat) // Extrait la sous-matrice 3x3
-    val quaternion = mat3ToQuaternion(rotationMat3) // Utilise la fonction de conversion
+    // Correction: Utiliser la construction manuelle de Mat3 (Tentative 2)
+    val rotationMat3 = Mat3(
+        rotMat[0].x, rotMat[0].y, rotMat[0].z,
+        rotMat[1].x, rotMat[1].y, rotMat[1].z,
+        rotMat[2].x, rotMat[2].y, rotMat[2].z
+    )
 
-    // normalize est déjà fait dans mat3ToQuaternion
+    val quaternion = mat3ToQuaternion(rotationMat3)
     return Triple(position, quaternion, scale)
 } 
