@@ -6,6 +6,7 @@ import io.github.sceneview.math.Scale as SceneScale
 import io.github.sceneview.math.Quaternion as SceneQuaternion
 import io.github.sceneview.math.Transform as SceneTransform
 import io.github.sceneview.math.toQuaternion
+import io.github.sceneview.math.Float4
 import kotlin.math.sqrt
 
 fun deserializeMatrix4(transform: ArrayList<Double>): Pair<ScenePosition, SceneRotation> {
@@ -78,15 +79,16 @@ fun deserializeMatrixComponents(transform: List<Double>): Triple<ScenePosition, 
     )
 
     // Normalize the matrix first for stable quaternion conversion if scales are non-uniform or zero
-    val normalizedMatrix = mat4.toMutableMat4().apply {
+    val mutableMatrix = mat4.toMutableMat4()
+    mutableMatrix.apply {
          // Divide columns by scale to get pure rotation
-         this[0] = this[0] / safeScaleX
-         this[1] = this[1] / safeScaleY
-         this[2] = this[2] / safeScaleZ
+         setColumn(0, getColumn(0) / safeScaleX)
+         setColumn(1, getColumn(1) / safeScaleY)
+         setColumn(2, getColumn(2) / safeScaleZ)
          // Ensure the 4th column represents translation = 0 for rotation matrix
-         this[3] = io.github.sceneview.math.Float4(0f, 0f, 0f, 1f)
+         setColumn(3, Float4(0f, 0f, 0f, 1f))
     }
-    val quaternion = normalizedMatrix.toQuaternion() // Use SceneView's conversion
+    val quaternion: SceneQuaternion = mutableMatrix.toQuaternion()
 
     return Triple(position, quaternion, scale)
 } 
