@@ -67,6 +67,7 @@ import dev.romainguy.kotlin.math.Quaternion
 import dev.romainguy.kotlin.math.length
 import dev.romainguy.kotlin.math.normalize
 import com.uhg0.ar_flutter_plugin_2.Serialization.deserializeMatrixComponentsFromList
+import io.github.sceneview.math.Mat4
 
 class ArView(
     context: Context,
@@ -249,10 +250,11 @@ class ArView(
 
         return try {
             sceneView.modelLoader.loadModelInstance(fileLocation)?.let { modelInstance ->
-                object : ModelNode(
-                    modelInstance = modelInstance,
-                    scaleToUnits = transformationList.first().toFloat(),
-                ) {
+                val node = ModelNode(modelInstance = modelInstance).apply {
+                    name = nodeData["name"] as? String
+                    isPositionEditable = handlePans
+                    isRotationEditable = handleRotation
+                    
                     override fun onMove(detector: MoveGestureDetector, e: MotionEvent): Boolean {
                             if (handlePans) {
                             val defaultResult = super.onMove(detector, e)
@@ -310,11 +312,17 @@ class ArView(
                             objectChannel.invokeMethod("onRotationEnd", transformMap)
                         }
                     }
-                }.apply {
-                    isPositionEditable = handlePans
-                    isRotationEditable = handleRotation
-                    name = nodeData["name"] as? String
                 }
+                try {
+                    val (initialPosition, initialQuaternion, initialScale) = deserializeMatrixComponentsFromList(transformationList)
+                    node.position = ScenePosition(initialPosition.x, initialPosition.y, initialPosition.z)
+                    node.quaternion = SceneQuaternion(initialQuaternion.x, initialQuaternion.y, initialQuaternion.z, initialQuaternion.w)
+                    node.scale = SceneScale(initialScale.x, initialScale.y, initialScale.z)
+                    Log.d(TAG, "Applied initial transform to node ${node.name}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error applying transformation changed for node $name", e)
+                }
+                node
             } ?: run {
                 null
             }
@@ -947,31 +955,25 @@ class ArView(
         try {
             val anchorType = call.argument<Int>("type")
             if (anchorType == 0) { // Plane Anchor
-                val transform = call.argument<ArrayList<Double>>("transformation")
+                val transformList = call.argument<List<Double>>("transformation")
                 val name = call.argument<String>("name")
 
-                if (name != null && transform != null) {
+                if (name != null && transformList != null && transformList.size == 16) {
                     try {
-                        // Décomposer la matrice de transformation
-                        val (position, rotation) = deserializeMatrix4(transform)
+                        val (position, quaternion) = deserializeMatrix4(transformList)
 
-                        val pose =
-                            Pose(
-                                floatArrayOf(position.x, position.y, position.z),
-                                floatArrayOf(rotation.x, rotation.y, rotation.z, 1f),
-                            )
+                        val pose = Pose(
+                            floatArrayOf(position.x, position.y, position.z),
+                            floatArrayOf(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
+                        )
 
                         val anchor = sceneView.session?.createAnchor(pose)
                         if (anchor != null) {
                             val anchorNode = AnchorNode(sceneView.engine, anchor)
                             try {
-                                anchorNode.transform =
-                                    Transform(
-                                        position = position,
-                                        rotation = rotation,
-                                    )
+                                val transformMatrix = Mat4.fromRotation(quaternion) * Mat4.translation(position)
                             } catch (e: Exception) {
-                                Log.w(TAG, "Transform warning suppressed: ${e.message}")
+                                Log.w(TAG, "Transform assignment warning suppressed: ${e.message}")
                             }
 
                             sceneView.addChildNode(anchorNode)
@@ -981,10 +983,11 @@ class ArView(
                             result.success(false)
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error in transform calculation: ${e.message}")
+                        Log.e(TAG, "Error in transform calculation or anchor creation: ${e.message}")
                         result.success(false)
                     }
                 } else {
+                    result.error("INVALID_ARGUMENTS", "Name and valid transformation list required", null)
                     result.success(false)
                 }
             } else {
@@ -992,7 +995,6 @@ class ArView(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in handleAddAnchor: ${e.message}")
-            e.printStackTrace()
             result.success(false)
         }
     }
@@ -1381,11 +1383,11 @@ class ArView(
 
         activePhysicsNodes.forEach { (node, velocity) ->
             // 1. Apply Gravity using Vector3 methods
-            val scaledGravity = gravity.scaled(deltaTime) // Calculate scaled gravity vector
+            val scaledGravity = gravity * deltaTime
             val newVelocity = velocity + scaledGravity
 
             // 2. Update Position using Vector3 methods
-            val displacement = newVelocity * deltaTime // Float3 (romainguy)
+            val displacement = newVelocity * deltaTime
             node.position = ScenePosition(
                 node.position.x + displacement.x,
                 node.position.y + displacement.y,
@@ -1398,14 +1400,11 @@ class ArView(
             // 4. Basic Collision Detection using Vector3 methods
             var collisionDetected = false
             targetNodes.forEach { (targetName, targetNode) ->
-                 val nodeWorldPos = node.worldPosition // ScenePosition?
-                 val targetWorldPos = targetNode.worldPosition // ScenePosition?
+                 val nodeWorldPos = node.worldPosition
+                 val targetWorldPos = targetNode.worldPosition
                  if (nodeWorldPos != null && targetWorldPos != null) {
                     try {
-                        // Calculate distance using collision.Vector3
-                        val nodePosVec = Float3(nodeWorldPos.x, nodeWorldPos.y, nodeWorldPos.z)
-                        val targetPosVec = Float3(targetWorldPos.x, targetWorldPos.y, targetWorldPos.z)
-                        val distance = length(nodePosVec - targetPosVec)
+                        val distance = length(nodeWorldPos - targetWorldPos)
 
                         val collisionThreshold = 0.3f
                         if (distance < collisionThreshold) {
@@ -1413,7 +1412,7 @@ class ArView(
                             nodesToRemove.add(node)
                             collisionEventsToSend[node.name!!] = targetName
                             collisionDetected = true
-                            return@forEach // Exit targetNodes.forEach for this projectile
+                            return@forEach
                         }
                     } catch (e: Exception) {
                          Log.e(TAG, "Error calculating distance between ${node.name} and $targetName: ${e.message}")
@@ -1436,9 +1435,7 @@ class ArView(
              val nodeWorldPos = node.worldPosition
              val outOfBoundsThreshold = 50.0f
              if (!collisionDetected && nodeWorldPos != null) {
-                // Calculate length from origin using collision.Vector3
-                val positionVector = Float3(nodeWorldPos.x, nodeWorldPos.y, nodeWorldPos.z)
-                 if (length(positionVector) > outOfBoundsThreshold) {
+                if (length(nodeWorldPos) > outOfBoundsThreshold) {
                      Log.d(TAG, "${node.name} went out of bounds.")
                      nodesToRemove.add(node)
                      collisionDetected = true
