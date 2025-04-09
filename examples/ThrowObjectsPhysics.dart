@@ -48,13 +48,17 @@ class _ThrowObjectsPhysicsState extends State<ThrowObjectsPhysics> {
   // Map to keep track of targets by name
   final Map<String, ARNode> _targetNodes = {};
 
-  bool _projectileInFlight = false; // Track if a projectile is currently launched
+  bool _projectileInFlight =
+      false; // Track if a projectile is currently launched
   int _score = 0;
 
   // Use local assets (ensure these exist in your FlutterFlow assets)
-  final String _targetModelPath = "assets/models/target.gltf"; // Ensure this path is correct
-  final String _projectileModelPath = "assets/models/projectile.gltf"; // Ensure this path is correct
-  final String _planeTexturePath = "assets/images/triangle.png"; // Ensure this path is correct
+  final String _targetModelPath =
+      "assets/models/target.gltf"; // Ensure this path is correct
+  final String _projectileModelPath =
+      "assets/models/projectile.gltf"; // Ensure this path is correct
+  final String _planeTexturePath =
+      "assets/images/triangle.png"; // Ensure this path is correct
 
   @override
   void dispose() {
@@ -109,27 +113,33 @@ class _ThrowObjectsPhysicsState extends State<ThrowObjectsPhysics> {
                       onPressed: _projectileInFlight ? null : _launchProjectile,
                       child: const Text('LAUNCH'),
                       style: ElevatedButton.styleFrom(
-                        foregroundColor: Colors.white, backgroundColor: ffTheme.primary,
+                        foregroundColor: Colors.white,
+                        backgroundColor: ffTheme.primary,
                         textStyle: ffTheme.bodyMedium,
-                        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       ),
                     ),
                     ElevatedButton(
                       onPressed: _addRandomTarget,
                       child: const Text('ADD TARGET'),
                       style: ElevatedButton.styleFrom(
-                        foregroundColor: Colors.white, backgroundColor: ffTheme.secondary,
+                        foregroundColor: Colors.white,
+                        backgroundColor: ffTheme.secondary,
                         textStyle: ffTheme.bodyMedium,
-                        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       ),
                     ),
-                     ElevatedButton(
+                    ElevatedButton(
                       onPressed: _clearAllNodes,
                       child: const Text('CLEAR ALL'),
                       style: ElevatedButton.styleFrom(
-                        foregroundColor: Colors.white, backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.redAccent,
                         textStyle: ffTheme.bodyMedium,
-                        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       ),
                     ),
                   ],
@@ -156,7 +166,8 @@ class _ThrowObjectsPhysicsState extends State<ThrowObjectsPhysics> {
       showPlanes: true, // Needed to place targets or visualize environment
       customPlaneTexturePath: _planeTexturePath,
       showWorldOrigin: false,
-      handleTaps: true, // Allow taps for interactions (e.g., placing targets manually if needed)
+      handleTaps:
+          true, // Allow taps for interactions (e.g., placing targets manually if needed)
     );
     arObjectManager!.onInitialize();
 
@@ -175,73 +186,77 @@ class _ThrowObjectsPhysicsState extends State<ThrowObjectsPhysics> {
 
   // --- Target Placement ---
 
-   Future<void> _addDefaultTarget() async {
-     // Wait a bit for AR session to stabilize
-     await Future.delayed(const Duration(seconds: 3));
-     // Add a target 2 meters in front of the initial camera position
-     final cameraPose = await arSessionManager?.getCameraPose();
-     if (cameraPose == null) return;
+  Future<void> _addDefaultTarget() async {
+    // Wait a bit for AR session to stabilize
+    await Future.delayed(const Duration(seconds: 3));
+    // Add a target 2 meters in front of the initial camera position
+    final cameraPose = await arSessionManager?.getCameraPose();
+    if (cameraPose == null) return;
 
-     final position = cameraPose.getTranslation() + (MatrixUtils.getForward(cameraPose) * -2.0); // Forward is -Z
-      _addTargetAtPosition(position);
+    final position = cameraPose.getTranslation() +
+        (MatrixUtils.getForward(cameraPose) * -2.0); // Forward is -Z
+    _addTargetAtPosition(position);
   }
 
   Future<void> _addRandomTarget() async {
-     final cameraPose = await arSessionManager?.getCameraPose();
-     if (cameraPose == null) {
-        _showSnackBar("Cannot get camera position.");
-        return;
-     }
-     // Place target randomly within a box in front of the camera
-     final camPos = cameraPose.getTranslation();
-     final camForward = MatrixUtils.getForward(cameraPose) * -1.0; // Forward direction
-     final camRight = MatrixUtils.getRight(cameraPose);
+    final cameraPose = await arSessionManager?.getCameraPose();
+    if (cameraPose == null) {
+      _showSnackBar("Cannot get camera position.");
+      return;
+    }
+    // Place target randomly within a box in front of the camera
+    final camPos = cameraPose.getTranslation();
+    final camForward =
+        MatrixUtils.getForward(cameraPose) * -1.0; // Forward direction
+    final camRight = MatrixUtils.getRight(cameraPose);
 
-     final rand = math.Random();
-     final randomDistance = 2.0 + rand.nextDouble() * 2.0; // 2m to 4m away
-     final randomRight = (rand.nextDouble() - 0.5) * 2.0; // -1m to +1m right/left
-     final randomUp = rand.nextDouble() * 1.0; // 0m to 1m up
+    final rand = math.Random();
+    final randomDistance = 2.0 + rand.nextDouble() * 2.0; // 2m to 4m away
+    final randomRight =
+        (rand.nextDouble() - 0.5) * 2.0; // -1m to +1m right/left
+    final randomUp = rand.nextDouble() * 1.0; // 0m to 1m up
 
-     final targetPosition = camPos + (camForward * randomDistance) + (camRight * randomRight) + Vector3(0, randomUp, 0);
+    final targetPosition = camPos +
+        (camForward * randomDistance) +
+        (camRight * randomRight) +
+        Vector3(0, randomUp, 0);
 
-     _addTargetAtPosition(targetPosition);
+    _addTargetAtPosition(targetPosition);
   }
 
-   // Handle taps on detected planes
-   void _onPlaneTapHandler(List<ARHitTestResult> hits) async {
+  // Handle taps on detected planes
+  void _onPlaneTapHandler(List<ARHitTestResult> hits) async {
     // Find the first hit that is a plane, or fallback to the first non-feature point hit, or just the first hit.
     final hit = hits.firstWhere(
         (hitTestResult) => hitTestResult.type == ARHitTestResultType.plane);
 
-    final position = Vector3(
-        hit.worldTransform.getColumn(3).x,
-        hit.worldTransform.getColumn(3).y,
-        hit.worldTransform.getColumn(3).z);
+    final position = Vector3(hit.worldTransform.getColumn(3).x,
+        hit.worldTransform.getColumn(3).y, hit.worldTransform.getColumn(3).z);
 
     _addTargetAtPosition(position);
   }
 
   // Adds a target node at the specified world position
   Future<void> _addTargetAtPosition(Vector3 position) async {
-      final nodeName = "target_${DateTime.now().millisecondsSinceEpoch}";
-      final targetNode = ARNode(
-        // Corrected to use local GLTF2 for local assets
-        type: NodeType.localGLTF2,
-        uri: _targetModelPath,
-        name: nodeName,
-        scale: Vector3(0.3, 0.3, 0.3),
-        position: position,
-        rotation: Vector4(0, 0, 0, 1),
-      );
+    final nodeName = "target_${DateTime.now().millisecondsSinceEpoch}";
+    final targetNode = ARNode(
+      // Corrected to use local GLTF2 for local assets
+      type: NodeType.localGLTF2,
+      uri: _targetModelPath,
+      name: nodeName,
+      scale: Vector3(0.3, 0.3, 0.3),
+      position: position,
+      rotation: Vector4(0, 0, 0, 1),
+    );
 
-      bool? added = await arObjectManager?.addNode(targetNode);
-      if (added ?? false) {
-        _sceneNodes[nodeName] = targetNode;
-        _targetNodes[nodeName] = targetNode;
-        _showSnackBar("Target added: $nodeName");
-      } else {
-          _showSnackBar("Failed to add target node.");
-      }
+    bool? added = await arObjectManager?.addNode(targetNode);
+    if (added ?? false) {
+      _sceneNodes[nodeName] = targetNode;
+      _targetNodes[nodeName] = targetNode;
+      _showSnackBar("Target added: $nodeName");
+    } else {
+      _showSnackBar("Failed to add target node.");
+    }
   }
 
   // --- Projectile Launching ---
@@ -252,8 +267,8 @@ class _ThrowObjectsPhysicsState extends State<ThrowObjectsPhysics> {
       return;
     }
     if (_projectileInFlight) {
-        _showSnackBar("Wait for the current projectile.");
-        return;
+      _showSnackBar("Wait for the current projectile.");
+      return;
     }
 
     final Matrix4? cameraTransform = await arSessionManager!.getCameraPose();
@@ -295,77 +310,83 @@ class _ThrowObjectsPhysicsState extends State<ThrowObjectsPhysics> {
       setState(() {
         _projectileInFlight = true;
       });
-       _showSnackBar("Launched ${projectileNode.name}!");
+      _showSnackBar("Launched ${projectileNode.name}!");
     } else {
-        _showSnackBar("Failed to add projectile node.");
+      _showSnackBar("Failed to add projectile node.");
     }
   }
 
   // --- Collision Handling ---
 
   void _onProjectileCollision(String nodeName, String? collidedWithNodeName) {
-     print("Collision Event: Node '$nodeName' collided with '$collidedWithNodeName'");
+    print(
+        "Collision Event: Node '$nodeName' collided with '$collidedWithNodeName'");
 
     if (nodeName.startsWith("projectile_")) {
-        // Correctly remove node: Use the object stored in the map
-        final nodeToRemove = _sceneNodes.remove(nodeName);
-        if(nodeToRemove != null) {
-          arObjectManager?.removeNode(nodeToRemove);
-        } else {
-           // Fallback if somehow not in map (less ideal)
-           // Still need type and uri for the constructor to be valid.
-           // Using placeholder values - this shouldn't normally happen if tracking is correct.
-           print("Warning: Node $nodeName not found in _sceneNodes for removal after collision.");
-           // arObjectManager?.removeNode(ARNode(name: nodeName, type: NodeType.fileSystemAppFolderGLB, uri: 'placeholder')); // Avoid this if possible
-        }
+      // Correctly remove node: Use the object stored in the map
+      final nodeToRemove = _sceneNodes.remove(nodeName);
+      if (nodeToRemove != null) {
+        arObjectManager?.removeNode(nodeToRemove);
+      } else {
+        // Fallback if somehow not in map (less ideal)
+        // Still need type and uri for the constructor to be valid.
+        // Using placeholder values - this shouldn't normally happen if tracking is correct.
+        print(
+            "Warning: Node $nodeName not found in _sceneNodes for removal after collision.");
+        // arObjectManager?.removeNode(ARNode(name: nodeName, type: NodeType.fileSystemAppFolderGLB, uri: 'placeholder')); // Avoid this if possible
+      }
 
-      if (collidedWithNodeName != null && collidedWithNodeName.startsWith("target_")) {
-        setState(() { _score++; });
+      if (collidedWithNodeName != null &&
+          collidedWithNodeName.startsWith("target_")) {
+        setState(() {
+          _score++;
+        });
         _showSnackBar("🎉 Target Hit! Score: $_score");
 
         final targetToRemove = _targetNodes.remove(collidedWithNodeName);
-        if(targetToRemove != null) {
-            _sceneNodes.remove(collidedWithNodeName);
-            arObjectManager?.removeNode(targetToRemove);
+        if (targetToRemove != null) {
+          _sceneNodes.remove(collidedWithNodeName);
+          arObjectManager?.removeNode(targetToRemove);
         }
-
       } else if (collidedWithNodeName == null) {
         _showSnackBar("💥 Projectile hit environment.");
       } else {
-         _showSnackBar("Projectile hit '$collidedWithNodeName'.");
+        _showSnackBar("Projectile hit '$collidedWithNodeName'.");
       }
 
-      setState(() { _projectileInFlight = false; });
+      setState(() {
+        _projectileInFlight = false;
+      });
     }
   }
 
   // --- Cleanup ---
 
   void _clearAllNodes() {
-     if (arObjectManager == null) return;
-     for (var node in _sceneNodes.values) {
-        arObjectManager!.removeNode(node);
-     }
-     setState(() {
-       _sceneNodes.clear();
-       _targetNodes.clear();
-       _score = 0;
-       _projectileInFlight = false;
-     });
-      _showSnackBar("All nodes cleared.");
+    if (arObjectManager == null) return;
+    for (var node in _sceneNodes.values) {
+      arObjectManager!.removeNode(node);
+    }
+    setState(() {
+      _sceneNodes.clear();
+      _targetNodes.clear();
+      _score = 0;
+      _projectileInFlight = false;
+    });
+    _showSnackBar("All nodes cleared.");
   }
 
   // --- Utility Functions ---
 
-   // Helper to show feedback messages
+  // Helper to show feedback messages
   void _showSnackBar(String message) {
     if (mounted) {
-       ScaffoldMessenger.of(context).showSnackBar(
-         SnackBar(
-           content: Text(message),
-           duration: const Duration(seconds: 2),
-         ),
-       );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -373,19 +394,25 @@ class _ThrowObjectsPhysicsState extends State<ThrowObjectsPhysics> {
   // Note: This is a simplified version. For perfect alignment, you might need a more
   // robust method considering an 'up' vector.
   Quaternion _vectorToQuaternion(Vector3 direction, [Vector3? up]) {
-      final Matrix4 rotMatrix = makeViewMatrix(Vector3.zero(), direction, up ?? Vector3(0, 1, 0));
-      // The rotation part of the view matrix needs to be inverted (transposed)
-      // to represent the object's rotation that achieves this view.
-      return Quaternion.fromRotation(rotMatrix.getRotation().transposed());
+    final Matrix4 rotMatrix =
+        makeViewMatrix(Vector3.zero(), direction, up ?? Vector3(0, 1, 0));
+    // The rotation part of the view matrix needs to be inverted (transposed)
+    // to represent the object's rotation that achieves this view.
+    return Quaternion.fromRotation(rotMatrix.getRotation().transposed());
   }
 }
-
 
 // Utility class to extract axes from Matrix4 (ensure this is accessible)
 // If you have this in custom_functions.dart, you don't need to define it here.
 // If not, uncomment this class definition.
 class MatrixUtils {
-   static Vector3 getForward(Matrix4 matrix) => Vector3(matrix.storage[8], matrix.storage[9], matrix.storage[10]).normalized();
-   static Vector3 getUp(Matrix4 matrix) => Vector3(matrix.storage[4], matrix.storage[5], matrix.storage[6]).normalized();
-   static Vector3 getRight(Matrix4 matrix) => Vector3(matrix.storage[0], matrix.storage[1], matrix.storage[2]).normalized();
-} 
+  static Vector3 getForward(Matrix4 matrix) =>
+      Vector3(matrix.storage[8], matrix.storage[9], matrix.storage[10])
+          .normalized();
+  static Vector3 getUp(Matrix4 matrix) =>
+      Vector3(matrix.storage[4], matrix.storage[5], matrix.storage[6])
+          .normalized();
+  static Vector3 getRight(Matrix4 matrix) =>
+      Vector3(matrix.storage[0], matrix.storage[1], matrix.storage[2])
+          .normalized();
+}

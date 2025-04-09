@@ -823,31 +823,29 @@ class ArView(
 
     private fun handleGetCameraPose(result: MethodChannel.Result) {
         try {
-            val frame = sceneView.session?.update()
-            val cameraPose = frame?.camera?.pose
+            // Tenter d'obtenir la frame la plus récente peut être plus sûr que .update() ici
+            // car .update() peut bloquer ou lancer des exceptions si la session n'est pas prête.
+            // Utilisons cameraNode qui est mis à jour par SceneView.
+            val cameraPose: Pose? = sceneView.arFrame?.camera?.displayOrientedPose
+            // Alternative: val cameraTransform = sceneView.cameraNode.worldTransform // Matrix
+
             if (cameraPose != null) {
-                val poseData =
-                    mapOf(
-                        "position" to
-                            mapOf(
-                                "x" to cameraPose.tx(),
-                                "y" to cameraPose.ty(),
-                                "z" to cameraPose.tz(),
-                            ),
-                        "rotation" to
-                            mapOf(
-                                "x" to cameraPose.rotationQuaternion[0],
-                                "y" to cameraPose.rotationQuaternion[1],
-                                "z" to cameraPose.rotationQuaternion[2],
-                                "w" to cameraPose.rotationQuaternion[3],
-                            ),
-                    )
-                result.success(poseData)
+                // Convertir la Pose ARCore en une matrice 4x4 (FloatArray de 16 éléments)
+                val matrixArray = FloatArray(16)
+                cameraPose.toMatrix(matrixArray, 0)
+
+                // Convertir le FloatArray en List<Double> pour l'envoyer à Flutter
+                val matrixAsDoubleList = matrixArray.map { it.toDouble() }
+
+                // Envoyer la liste à Flutter
+                result.success(matrixAsDoubleList)
             } else {
+                Log.w(TAG, "Camera pose is not available.")
                 result.error("NO_CAMERA_POSE", "Camera pose is not available", null)
             }
         } catch (e: Exception) {
-            result.error("CAMERA_POSE_ERROR", e.message, null)
+            Log.e(TAG, "Error getting camera pose", e)
+            result.error("CAMERA_POSE_ERROR", e.message, e.toString())
         }
     }
 
