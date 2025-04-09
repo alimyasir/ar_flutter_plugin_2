@@ -60,14 +60,13 @@ import com.google.ar.core.exceptions.SessionPausedException
 import io.github.sceneview.collision.Vector3
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
-import com.uhg0.ar_flutter_plugin_2.Serialization.deserializeMatrixComponents
+import com.uhg0.ar_flutter_plugin_2.Serialization.deserializeMatrixComponentsFromList
 import io.github.sceneview.math.Quaternion as SceneQuaternion
 import dev.romainguy.kotlin.math.Float3
 import dev.romainguy.kotlin.math.Quaternion
 import dev.romainguy.kotlin.math.length
 import dev.romainguy.kotlin.math.normalize
-import com.uhg0.ar_flutter_plugin_2.Serialization.deserializeMatrixComponentsFromList
-import io.github.sceneview.math.Mat4
+import dev.romainguy.kotlin.math.Mat4
 
 class ArView(
     context: Context,
