@@ -241,13 +241,12 @@ class ArView(
             // Charger l'instance du modèle
             sceneView.modelLoader.loadModelInstance(finalFileLocation)?.let { modelInstance ->
 
-                // Désérialiser la position et la rotation depuis la matrice reçue
-                val (initialPosition, initialRotation) = deserializeMatrix4(transformation)
+                // ++ Désérialiser position, rotation ET SCALE ++
+                val (initialPosition, initialRotation, initialScale) = deserializeMatrix4(transformation)
 
                 // Créer le nœud ModelNode
                 object : ModelNode(
                     modelInstance = modelInstance,
-                    // Ne pas utiliser scaleToUnits ici si l'échelle est déjà dans la matrice
                 ) {
                     override fun onMove(detector: MoveGestureDetector, e: MotionEvent): Boolean {
                             if (handlePans) {
@@ -307,17 +306,18 @@ class ArView(
                         }
                     }
 
-                }.apply { // Bloc après création
-                    // Appliquer la position et la rotation initiales !
+                }.apply {
+                    // Appliquer la position
                     this.position = initialPosition
-                    this.rotation = initialRotation // Appliquer la rotation désérialisée
-                    // Alternativement, si deserializeMatrix4 renvoie un Quaternion:
-                    // this.quaternion = initialQuaternion
+                    // Appliquer la rotation (en utilisant la rotation extraite, même si potentiellement imprécise)
+                    this.rotation = initialRotation
+                    // ++ Appliquer l'échelle ++
+                    this.scale = initialScale
 
                     // Appliquer les autres propriétés
                     isPositionEditable = handlePans
                     isRotationEditable = handleRotation
-                    name = nodeData["name"] as? String // Appliquer le nom
+                    name = nodeData["name"] as? String
                 }
             } ?: run {
                 Log.e(TAG, "Failed to load model instance from: $finalFileLocation")

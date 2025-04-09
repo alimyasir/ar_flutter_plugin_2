@@ -2,15 +2,22 @@ package com.uhg0.ar_flutter_plugin_2.Serialization
 
 import io.github.sceneview.math.Position as ScenePosition
 import io.github.sceneview.math.Rotation as SceneRotation
+import io.github.sceneview.math.Scale as SceneScale
 import kotlin.math.sqrt
 
-fun deserializeMatrix4(transform: ArrayList<Double>): Pair<ScenePosition, SceneRotation> {
+fun deserializeMatrix4(transform: ArrayList<Double>): Triple<ScenePosition, SceneRotation, SceneScale> {
     // Position
     val position = ScenePosition(
         x = transform[12].toFloat(),
         y = transform[13].toFloat(),
         z = transform[14].toFloat()
     )
+
+    // Scale Calculation
+    val scaleX = sqrt(transform[0]*transform[0] + transform[1]*transform[1] + transform[2]*transform[2]).toFloat()
+    val scaleY = sqrt(transform[4]*transform[4] + transform[5]*transform[5] + transform[6]*transform[6]).toFloat()
+    val scaleZ = sqrt(transform[8]*transform[8] + transform[9]*transform[9] + transform[10]*transform[10]).toFloat()
+    val scale = SceneScale(scaleX, scaleY, scaleZ)
 
     // Rotation
     val m00 = transform[0].toFloat()
@@ -35,5 +42,5 @@ fun deserializeMatrix4(transform: ArrayList<Double>): Pair<ScenePosition, SceneR
         SceneRotation()
     }
 
-    return Pair(position, rotation)
+    return Triple(position, rotation, scale)
 } 
