@@ -47,14 +47,15 @@ fun deserializeMatrix4(transform: ArrayList<Double>): Triple<ScenePosition, Scen
         val qx = (m21 - m12) / s
         val qy = (m02 - m20) / s
         val qz = (m10 - m01) / s
+        val qw = 0.25f * s  // Ajout de la composante w du quaternion
         
-        SceneRotation(x = qx, y = qy, z = qz)
+        SceneRotation(x = qx, y = qy, z = qz, w = qw)
     } else {
         Log.d("Deserializers", "Trace négative ou nulle, utilisation d'une rotation par défaut")
-        SceneRotation()
+        SceneRotation(0f, 0f, 0f, 1f)  // Quaternion d'identité (pas de rotation)
     }
     
-    Log.d("Deserializers", "Rotation extraite (quaternion): x=${rotation.x}, y=${rotation.y}, z=${rotation.z}")
+    Log.d("Deserializers", "Rotation extraite (quaternion): x=${rotation.x}, y=${rotation.y}, z=${rotation.z}, w=${rotation.w}")
 
     return Triple(position, rotation, scale)
 } 

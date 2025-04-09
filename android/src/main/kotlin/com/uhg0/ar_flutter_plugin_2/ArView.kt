@@ -212,6 +212,11 @@ class ArView(
         val fileLocation = nodeData["uri"] as? String ?: return null
         // Obtenir la liste de transformation (matrice)
         val transformation = nodeData["transformation"] as? ArrayList<Double> ?: return null
+        
+        // IMPORTANT : Récupérer directement le vecteur de rotation s'il existe
+        val rotationVector = nodeData["rotation"] as? ArrayList<Double>
+        
+        Log.d("ArView", "NodeData: ${nodeData["name"]}, rotation Vector4: $rotationVector")
 
         // Déterminer le type pour le chargement (le code existant est bon pour ça)
         val nodeTypeIndex = nodeData["type"] as? Int ?: return null
@@ -242,10 +247,23 @@ class ArView(
             sceneView.modelLoader.loadModelInstance(finalFileLocation)?.let { modelInstance ->
 
                 // ++ Désérialiser position, rotation ET SCALE ++
-                val (initialPosition, initialRotation, initialScale) = deserializeMatrix4(transformation)
+                val (initialPosition, extractedRotation, initialScale) = deserializeMatrix4(transformation)
                 
-                Log.d("ArView", "NodeData: ${nodeData["name"]}, rotation Vector4: ${nodeData["rotation"]}")
-                Log.d("ArView", "Rotation extraite: x=${initialRotation.x}, y=${initialRotation.y}, z=${initialRotation.z}")
+                // Créer une rotation à partir du vecteur de rotation fourni s'il existe
+                val initialRotation = if (rotationVector != null && rotationVector.size == 4) {
+                    Log.d("ArView", "Utilisation de la rotation spécifiée: x=${rotationVector[0]}, y=${rotationVector[1]}, z=${rotationVector[2]}, w=${rotationVector[3]}")
+                    SceneRotation(
+                        x = rotationVector[0].toFloat(),
+                        y = rotationVector[1].toFloat(),
+                        z = rotationVector[2].toFloat(),
+                        w = rotationVector[3].toFloat()
+                    )
+                } else {
+                    Log.d("ArView", "Utilisation de la rotation extraite de la matrice")
+                    extractedRotation
+                }
+                
+                Log.d("ArView", "Rotation finale: x=${initialRotation.x}, y=${initialRotation.y}, z=${initialRotation.z}, w=${initialRotation.w}")
 
                 // Créer le nœud ModelNode
                 object : ModelNode(
@@ -314,7 +332,7 @@ class ArView(
                     this.position = initialPosition
                     Log.d("ArView", "Position appliquée à ${nodeData["name"]}: $position")
                     
-                    // Appliquer la rotation (en utilisant la rotation extraite, même si potentiellement imprécise)
+                    // Appliquer la rotation 
                     this.rotation = initialRotation
                     Log.d("ArView", "Rotation appliquée à ${nodeData["name"]}: $rotation")
                     
