@@ -57,10 +57,9 @@ import io.github.sceneview.math.Scale
 import io.github.sceneview.math.colorOf
 import io.github.sceneview.loaders.MaterialLoader
 import com.google.ar.core.exceptions.SessionPausedException
-import io.github.sceneview.math.Float3
+import io.github.sceneview.collision.Vector3
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
-import io.github.sceneview.math.distanceTo
 
 class ArView(
     context: Context,
@@ -97,9 +96,9 @@ class ArView(
 
     // ++ NEW PROPERTIES FOR PHYSICS ++
     // Map to store nodes currently undergoing physics simulation and their velocities
-    private val activePhysicsNodes = ConcurrentHashMap<Node, Float3>()
+    private val activePhysicsNodes = ConcurrentHashMap<Node, Vector3>()
     // Gravity vector (adjust Y value as needed for desired effect)
-    private val gravity = Float3(0.0f, -9.8f, 0.0f) // m/s^2
+    private val gravity = Vector3(0.0f, -9.8f, 0.0f) // m/s^2
     // Map to store potential target nodes (if needed for collision)
     private val targetNodes = ConcurrentHashMap<String, Node>() // Using ConcurrentHashMap for potential modifications from different threads
     // Timestamp of the last frame for deltaTime calculation
@@ -1363,7 +1362,7 @@ class ArView(
         }
     }
 
-    // ++ NEW PHYSICS UPDATE FUNCTION ++
+    // ++ PHYSICS UPDATE FUNCTION USING collision.Vector3 ++
     private fun updatePhysics(currentTimestamp: Long) {
         if (activePhysicsNodes.isEmpty()) {
              lastFrameTimestamp = currentTimestamp
@@ -1387,31 +1386,40 @@ class ArView(
         val collisionEventsToSend = mutableMapOf<String, String?>()
 
         activePhysicsNodes.forEach { (node, velocity) ->
-            // 1. Apply Gravity
-            val newVelocity = velocity + gravity * deltaTime
+            // 1. Apply Gravity using Vector3 methods
+            val scaledGravity = gravity.scaled(deltaTime) // Calculate scaled gravity vector
+            val newVelocity = Vector3.add(velocity, scaledGravity) // Add velocity and scaled gravity
 
-            // 2. Update Position
-            val displacement = newVelocity * deltaTime
-            node.position = node.position + displacement
+            // 2. Update Position using Vector3 methods
+            val displacement = newVelocity.scaled(deltaTime) // Calculate displacement vector
+            node.position = Position(
+                node.position.x + displacement.x,
+                node.position.y + displacement.y,
+                node.position.z + displacement.z
+            )
 
             // 3. Update Velocity in Map
             activePhysicsNodes[node] = newVelocity
 
-            // 4. Basic Collision Detection
+            // 4. Basic Collision Detection using Vector3 methods
             var collisionDetected = false
             targetNodes.forEach { (targetName, targetNode) ->
-                 // Corrected: Remove isAttached check, check worldPosition validity instead (optional)
-                 // Node world positions might be null if not fully initialized/rendered? Be cautious.
-                 val nodeWorldPos = node.worldPosition
-                 val targetWorldPos = targetNode.worldPosition
+                 val nodeWorldPos = node.worldPosition // Type is math.Position
+                 val targetWorldPos = targetNode.worldPosition // Type is math.Position
                  if (nodeWorldPos != null && targetWorldPos != null) {
                     try {
-                        val distance = nodeWorldPos.distanceTo(targetWorldPos)
+                        // Calculate distance using collision.Vector3
+                        val differenceVector = Vector3(
+                            nodeWorldPos.x - targetWorldPos.x,
+                            nodeWorldPos.y - targetWorldPos.y,
+                            nodeWorldPos.z - targetWorldPos.z
+                        )
+                        val distance = differenceVector.length() // Use length() from collision.Vector3
+
                         val collisionThreshold = 0.3f
                         if (distance < collisionThreshold) {
                             Log.d(TAG, "Collision detected: ${node.name} hit ${targetName}")
                             nodesToRemove.add(node)
-                            // node.name should not be null if added correctly
                             collisionEventsToSend[node.name!!] = targetName
                             collisionDetected = true
                             return@forEach // Exit targetNodes.forEach for this projectile
@@ -1433,26 +1441,29 @@ class ArView(
                 collisionDetected = true
             }
 
-             // 6. Check for out of bounds
+             // 6. Check for out of bounds using Vector3 length
              val nodeWorldPos = node.worldPosition
              val outOfBoundsThreshold = 50.0f
-             if (!collisionDetected && nodeWorldPos != null && nodeWorldPos.length > outOfBoundsThreshold) {
-                 Log.d(TAG, "${node.name} went out of bounds.")
-                 nodesToRemove.add(node)
-                 collisionDetected = true
+             if (!collisionDetected && nodeWorldPos != null) {
+                // Calculate length from origin using collision.Vector3
+                val positionVector = Vector3(nodeWorldPos.x, nodeWorldPos.y, nodeWorldPos.z)
+                 if (positionVector.length() > outOfBoundsThreshold) {
+                     Log.d(TAG, "${node.name} went out of bounds.")
+                     nodesToRemove.add(node)
+                     collisionDetected = true
+                 }
              }
         }
 
         nodesToRemove.forEach { node ->
             activePhysicsNodes.remove(node)
-            // Decide if you want to remove the node visually from the scene upon collision
+            // Optional: remove node from scene
             // sceneView.removeChildNode(node)
-            // nodesMap.remove(node.name) // Remove from main tracking map if removing from scene
+            // nodesMap.remove(node.name)
         }
 
         if (collisionEventsToSend.isNotEmpty()) {
              mainScope.launch {
-                 // Corrected: Use Map.forEach with key-value destructuring
                  collisionEventsToSend.forEach { (nodeName, collidedWithNodeName) ->
                      objectChannel.invokeMethod("onPhysicsNodeCollision", mapOf(
                          "nodeName" to nodeName,
@@ -1464,21 +1475,20 @@ class ArView(
     }
     // -- END OF PHYSICS UPDATE FUNCTION --
 
-    // ++ NEW FUNCTION TO START PHYSICS ++
+    // ++ FUNCTION TO START PHYSICS USING collision.Vector3 ++
     private fun handleStartPhysics(nodeName: String?, initialVelocityList: List<Double>?, result: MethodChannel.Result) {
         if (nodeName == null || initialVelocityList == null || initialVelocityList.size != 3) {
             result.error("INVALID_ARGUMENTS", "nodeName and initialVelocity (List<Double> with 3 elements) are required.", null)
             return
         }
 
-        // Use Node type, as nodesMap might contain different types in the future
-        val node: Node? = nodesMap[nodeName] // Get the Node (might be ModelNode or other)
+        val node: Node? = nodesMap[nodeName]
         if (node == null) {
             result.error("NODE_NOT_FOUND", "Node with name '$nodeName' not found.", null)
             return
         }
 
-        val initialVelocity = Float3(
+        val initialVelocity = Vector3(
             initialVelocityList[0].toFloat(),
             initialVelocityList[1].toFloat(),
             initialVelocityList[2].toFloat()
