@@ -243,6 +243,9 @@ class ArView(
 
                 // ++ Désérialiser position, rotation ET SCALE ++
                 val (initialPosition, initialRotation, initialScale) = deserializeMatrix4(transformation)
+                
+                Log.d("ArView", "NodeData: ${nodeData["name"]}, rotation Vector4: ${nodeData["rotation"]}")
+                Log.d("ArView", "Rotation extraite: x=${initialRotation.x}, y=${initialRotation.y}, z=${initialRotation.z}")
 
                 // Créer le nœud ModelNode
                 object : ModelNode(
@@ -309,10 +312,15 @@ class ArView(
                 }.apply {
                     // Appliquer la position
                     this.position = initialPosition
+                    Log.d("ArView", "Position appliquée à ${nodeData["name"]}: $position")
+                    
                     // Appliquer la rotation (en utilisant la rotation extraite, même si potentiellement imprécise)
                     this.rotation = initialRotation
+                    Log.d("ArView", "Rotation appliquée à ${nodeData["name"]}: $rotation")
+                    
                     // ++ Appliquer l'échelle ++
                     this.scale = initialScale
+                    Log.d("ArView", "Échelle appliquée à ${nodeData["name"]}: $scale")
 
                     // Appliquer les autres propriétés
                     isPositionEditable = handlePans
