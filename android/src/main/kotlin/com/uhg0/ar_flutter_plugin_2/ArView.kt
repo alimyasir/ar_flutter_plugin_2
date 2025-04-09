@@ -44,6 +44,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import io.github.sceneview.math.Position as ScenePosition
+import io.github.sceneview.math.Rotation as SceneRotation
 import io.github.sceneview.math.Scale as SceneScale
 import io.github.sceneview.texture.ImageTexture
 import io.github.sceneview.material.setTexture
@@ -52,6 +53,7 @@ import io.flutter.FlutterInjector
 import io.github.sceneview.node.CylinderNode
 import io.github.sceneview.math.Direction
 import io.github.sceneview.math.Rotation
+import io.github.sceneview.math.Scale
 import io.github.sceneview.math.colorOf
 import io.github.sceneview.loaders.MaterialLoader
 import com.google.ar.core.exceptions.SessionPausedException

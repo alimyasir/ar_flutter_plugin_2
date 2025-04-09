@@ -9,14 +9,59 @@ import io.github.sceneview.math.Quaternion as SceneQuaternion // Alias pour le t
 
 // +++ dev.romainguy.kotlin.math Imports +++
 import dev.romainguy.kotlin.math.Float3
-import dev.romainguy.kotlin.math.Quaternion // Le type Quaternion utilisé pour les calculs
-import dev.romainguy.kotlin.math.Mat4       // Importer Mat4
+import dev.romainguy.kotlin.math.Quaternion
+import dev.romainguy.kotlin.math.Mat4
 import dev.romainguy.kotlin.math.Float4
-import dev.romainguy.kotlin.math.normalize // Fonction de normalisation
-import dev.romainguy.kotlin.math.length    // Fonction de longueur
+import dev.romainguy.kotlin.math.normalize
+import dev.romainguy.kotlin.math.length
+import dev.romainguy.kotlin.math.Mat3
+import dev.romainguy.kotlin.math.rotation
 // --- Fin Imports ---
 
 import kotlin.math.sqrt
+
+
+// Fonction utilitaire pour convertir Mat3 en Quaternion (algorithme standard)
+fun mat3ToQuaternion(m: Mat3): Quaternion {
+    val t = m[0, 0] + m[1, 1] + m[2, 2] // Trace
+    val q: Quaternion
+
+    if (t > 0.0f) {
+        val s = sqrt(t + 1.0f) * 2.0f
+        q = Quaternion(
+            x = (m[2, 1] - m[1, 2]) / s,
+            y = (m[0, 2] - m[2, 0]) / s,
+            z = (m[1, 0] - m[0, 1]) / s,
+            w = 0.25f * s
+        )
+    } else if ((m[0, 0] > m[1, 1]) && (m[0, 0] > m[2, 2])) {
+        val s = sqrt(1.0f + m[0, 0] - m[1, 1] - m[2, 2]) * 2.0f
+        q = Quaternion(
+            x = 0.25f * s,
+            y = (m[0, 1] + m[1, 0]) / s,
+            z = (m[0, 2] + m[2, 0]) / s,
+            w = (m[2, 1] - m[1, 2]) / s
+        )
+    } else if (m[1, 1] > m[2, 2]) {
+        val s = sqrt(1.0f + m[1, 1] - m[0, 0] - m[2, 2]) * 2.0f
+        q = Quaternion(
+            x = (m[0, 1] + m[1, 0]) / s,
+            y = 0.25f * s,
+            z = (m[1, 2] + m[2, 1]) / s,
+            w = (m[0, 2] - m[2, 0]) / s
+        )
+    } else {
+        val s = sqrt(1.0f + m[2, 2] - m[0, 0] - m[1, 1]) * 2.0f
+        q = Quaternion(
+            x = (m[0, 2] + m[2, 0]) / s,
+            y = (m[1, 2] + m[2, 1]) / s,
+            z = 0.25f * s,
+            w = (m[1, 0] - m[0, 1]) / s
+        )
+    }
+    // Retourner normalisé car les calculs peuvent introduire de petites erreurs
+    return normalize(q)
+}
 
 
 // --- Mise à jour de l'ancienne fonction pour utiliser les nouveaux types ---
@@ -25,39 +70,34 @@ fun deserializeMatrix4(transform: List<Double>): Pair<Float3, Quaternion> {
      if (transform.size != 16) {
         throw IllegalArgumentException("Transformation list must have 16 elements.")
     }
-    val m = transform.map { it.toFloat() }.toFloatArray() // Renommé pour clarté
-
-    // Correction: Construire Mat4 colonne par colonne (column-major)
-    val mat4 = Mat4(
-        x = Float4(m[0], m[1], m[2], m[3]),   // Colonne 0
-        y = Float4(m[4], m[5], m[6], m[7]),   // Colonne 1
-        z = Float4(m[8], m[9], m[10], m[11]), // Colonne 2
-        w = Float4(m[12], m[13], m[14], m[15]) // Colonne 3 (Translation)
-    )
+    val matrixArray = transform.map { it.toFloat() }.toFloatArray()
+    // Correction: Utiliser Mat4.fromColumnMajor avec spread operator
+    val mat4 = Mat4.fromColumnMajor(*matrixArray)
 
     // Position
-    val position = Float3(mat4[3].x, mat4[3].y, mat4[3].z) // mat4.w.xyz
+    val position = Float3(mat4[3].x, mat4[3].y, mat4[3].z)
 
     // Rotation (simplifié)
-    val scaleX = length(mat4[0].xyz) // mat4.x.xyz
-    val scaleY = length(mat4[1].xyz) // mat4.y.xyz
-    val scaleZ = length(mat4[2].xyz) // mat4.z.xyz
+    val scaleX = length(mat4[0].xyz)
+    val scaleY = length(mat4[1].xyz)
+    val scaleZ = length(mat4[2].xyz)
     val safeScaleX = if (scaleX == 0f) 1f else scaleX
     val safeScaleY = if (scaleY == 0f) 1f else scaleY
     val safeScaleZ = if (scaleZ == 0f) 1f else scaleZ
 
-    // Correction: Construire la matrice de rotation pure Mat4
+    // Créer la matrice de rotation pure (Mat4)
     val rotMat = Mat4(
         Float4(mat4[0].xyz / safeScaleX, 0f),
         Float4(mat4[1].xyz / safeScaleY, 0f),
         Float4(mat4[2].xyz / safeScaleZ, 0f),
-        Float4(0f, 0f, 0f, 1f) // Colonne W identité
+        Float4(0f, 0f, 0f, 1f)
     )
-    // Correction: Utiliser le constructeur Quaternion(Mat4)
-    val rotationQuaternion: Quaternion = Quaternion(rotMat)
+    // Correction: Extraire Mat3 et convertir en Quaternion via la fonction utilitaire
+    val rotationMat3: Mat3 = rotation(rotMat) // Extrait la sous-matrice 3x3
+    val rotationQuaternion = mat3ToQuaternion(rotationMat3) // Utilise la fonction de conversion
 
-    // Correction : Normaliser le Quaternion
-    return Pair(position, normalize(rotationQuaternion))
+    // normalize est déjà fait dans mat3ToQuaternion
+    return Pair(position, rotationQuaternion)
 }
 
 // --- Fonction principale de désérialisation ---
@@ -66,39 +106,34 @@ fun deserializeMatrixComponentsFromList(transform: List<Double>): Triple<Float3,
         throw IllegalArgumentException("Transformation list must have 16 elements.")
     }
 
-    val m = transform.map { it.toFloat() }.toFloatArray()
-
-    // Correction: Construire Mat4 colonne par colonne
-    val mat4 = Mat4(
-        x = Float4(m[0], m[1], m[2], m[3]),
-        y = Float4(m[4], m[5], m[6], m[7]),
-        z = Float4(m[8], m[9], m[10], m[11]),
-        w = Float4(m[12], m[13], m[14], m[15])
-    )
+    val matrixArray = transform.map { it.toFloat() }.toFloatArray()
+    // Correction: Utiliser Mat4.fromColumnMajor avec spread operator
+    val mat4 = Mat4.fromColumnMajor(*matrixArray)
 
     // Position
-    val position = Float3(mat4[3].x, mat4[3].y, mat4[3].z) // mat4.w.xyz
+    val position = Float3(mat4[3].x, mat4[3].y, mat4[3].z)
 
     // Scale
-    val scaleX = length(mat4[0].xyz) // mat4.x.xyz
-    val scaleY = length(mat4[1].xyz) // mat4.y.xyz
-    val scaleZ = length(mat4[2].xyz) // mat4.z.xyz
+    val scaleX = length(mat4[0].xyz)
+    val scaleY = length(mat4[1].xyz)
+    val scaleZ = length(mat4[2].xyz)
     val safeScaleX = if (scaleX == 0f) 1f else scaleX
     val safeScaleY = if (scaleY == 0f) 1f else scaleY
     val safeScaleZ = if (scaleZ == 0f) 1f else scaleZ
     val scale = Float3(safeScaleX, safeScaleY, safeScaleZ)
 
     // Rotation
-    // Correction: Construire la matrice de rotation pure Mat4
+    // Créer la matrice de rotation pure (Mat4)
     val rotMat = Mat4(
         Float4(mat4[0].xyz / safeScaleX, 0f),
         Float4(mat4[1].xyz / safeScaleY, 0f),
         Float4(mat4[2].xyz / safeScaleZ, 0f),
-        Float4(0f, 0f, 0f, 1f) // Colonne W identité
+        Float4(0f, 0f, 0f, 1f)
     )
-    // Correction: Utiliser le constructeur Quaternion(Mat4) et typer explicitement
-    val quaternion: Quaternion = Quaternion(rotMat)
+    // Correction: Extraire Mat3 et convertir en Quaternion via la fonction utilitaire
+    val rotationMat3: Mat3 = rotation(rotMat) // Extrait la sous-matrice 3x3
+    val quaternion = mat3ToQuaternion(rotationMat3) // Utilise la fonction de conversion
 
-    // Correction : Normaliser le Quaternion
-    return Triple(position, normalize(quaternion), scale)
+    // normalize est déjà fait dans mat3ToQuaternion
+    return Triple(position, quaternion, scale)
 } 
