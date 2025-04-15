@@ -5,6 +5,7 @@ import 'package:ar_flutter_plugin_2/models/ar_node.dart';
 import 'package:ar_flutter_plugin_2/utils/json_converters.dart';
 import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math_64.dart';
+import 'package:vector_math/vector_math.dart' as math;
 
 // Type definitions to enforce a consistent use of the API
 typedef NodeTapResultHandler = void Function(List<String> nodes);
@@ -177,5 +178,39 @@ class ARObjectManager {
     } on PlatformException catch (e) {
       print("❌ Failed to start physics for node '$nodeName': ${e.message}");
     }
+  }
+
+  Future<void> transformNode({
+    required String name,
+    required Vector3 translation,
+    required Vector3 rotation,
+    required Vector3 scale,
+  }) async {
+    print("=== TRANSFORM NODE ===");
+    print("Nom du nœud: $name");
+    print("Translation: x=${translation.x}, y=${translation.y}, z=${translation.z}");
+    print("Rotation (radians): x=${rotation.x}, y=${rotation.y}, z=${rotation.z}");
+    print("Rotation (degrés): x=${rotation.x * 180 / math.pi}°, y=${rotation.y * 180 / math.pi}°, z=${rotation.z * 180 / math.pi}°");
+    print("Scale: x=${scale.x}, y=${scale.y}, z=${scale.z}");
+
+    final node = _nodes[name];
+    if (node == null) {
+      print("ERREUR: Nœud non trouvé avec le nom: $name");
+      throw Exception('Node not found');
+    }
+
+    node.transform = Matrix4.compose(
+      translation,
+      Quaternion.fromEuler(rotation.x, rotation.y, rotation.z),
+      scale,
+    );
+
+    print("Nouvelle transformation appliquée au nœud: ${node.transform.storage}");
+    await _channel.invokeMethod('transformNode', {
+      'name': name,
+      'translation': translation.storage,
+      'rotation': rotation.storage,
+      'scale': scale.storage,
+    });
   }
 }

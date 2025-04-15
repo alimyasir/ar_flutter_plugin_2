@@ -63,12 +63,17 @@ class ARNode {
   Matrix3 get rotation => transform.getRotation();
 
   set rotation(Matrix3 value) {
-    transform =
-        Matrix4.compose(position, Quaternion.fromRotation(value), scale);
+    print("=== SET ROTATION (Matrix3) ===");
+    print("Rotation Matrix3 reçue: $value");
+    transform = Matrix4.compose(position, Quaternion.fromRotation(value), scale);
+    print("Nouvelle transformation appliquée: ${transform.storage}");
   }
 
   set rotationFromQuaternion(Quaternion value) {
+    print("=== SET ROTATION (Quaternion) ===");
+    print("Quaternion reçu: w=${value.w}, x=${value.x}, y=${value.y}, z=${value.z}");
     transform = Matrix4.compose(position, value, scale);
+    print("Nouvelle transformation appliquée: ${transform.storage}");
   }
 
   /// Determines the receiver's euler angles.
@@ -79,10 +84,14 @@ class ARNode {
   Vector3 get eulerAngles => transform.matrixEulerAngles;
 
   set eulerAngles(Vector3 value) {
+    print("=== SET EULER ANGLES ===");
+    print("Angles d'Euler reçus (radians): x=${value.x}, y=${value.y}, z=${value.z}");
+    print("Angles d'Euler reçus (degrés): x=${value.x * 180 / math.pi}°, y=${value.y * 180 / math.pi}°, z=${value.z * 180 / math.pi}°");
     final old = Matrix4.fromFloat64List(transform.storage);
     final newT = old.clone();
     newT.matrixEulerAngles = value;
     transform = newT;
+    print("Nouvelle transformation appliquée: ${transform.storage}");
   }
 
   final ValueNotifier<Matrix4> transformNotifier;

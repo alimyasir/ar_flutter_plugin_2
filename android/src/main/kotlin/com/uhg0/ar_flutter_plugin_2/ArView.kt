@@ -249,12 +249,15 @@ class ArView(
             sceneView.modelLoader.loadModelInstance(finalFileLocation)?.let { modelInstance ->
 
                 // ++ Désérialiser position, rotation ET SCALE ++
+                Log.d("ArView", "=== DÉBUT DU TRAITEMENT DE LA ROTATION ===")
+                Log.d("ArView", "Matrice de transformation reçue: $transformation")
                 val (initialPosition, extractedRotation, initialScale) = deserializeMatrix4(transformation)
+                Log.d("ArView", "Rotation extraite de la matrice (euler): x=${extractedRotation.x}, y=${extractedRotation.y}, z=${extractedRotation.z}")
                 
                 // Créer une rotation à partir du vecteur de rotation fourni s'il existe
                 val initialRotation = if (rotationVector != null && rotationVector.size == 4) {
-                    Log.d("ArView", "Rotation vector reçu: $rotationVector")
-                    Log.d("ArView", "Quaternion - w: ${rotationVector[3]}, x: ${rotationVector[0]}, y: ${rotationVector[1]}, z: ${rotationVector[2]}")
+                    Log.d("ArView", "=== TRAITEMENT DU QUATERNION ===")
+                    Log.d("ArView", "Quaternion reçu: w=${rotationVector[3]}, x=${rotationVector[0]}, y=${rotationVector[1]}, z=${rotationVector[2]}")
                     
                     val w = rotationVector[3].toFloat()
                     val x = rotationVector[0].toFloat()
@@ -265,15 +268,19 @@ class ArView(
                     val rotY = atan2(2f * (w * y - z * x), 1f - 2f * (y * y + z * z))
                     val rotZ = asin(2f * (w * z + x * y))
                     
-                    Log.d("ArView", "Angles d'Euler calculés - X: ${Math.toDegrees(rotX.toDouble())}°, Y: ${Math.toDegrees(rotY.toDouble())}°, Z: ${Math.toDegrees(rotZ.toDouble())}°")
+                    Log.d("ArView", "Angles d'Euler calculés (radians): X=$rotX, Y=$rotY, Z=$rotZ")
+                    Log.d("ArView", "Angles d'Euler calculés (degrés): X=${Math.toDegrees(rotX.toDouble())}°, Y=${Math.toDegrees(rotY.toDouble())}°, Z=${Math.toDegrees(rotZ.toDouble())}°")
                     
                     SceneRotation(rotX, rotY, rotZ)
                 } else {
-                    Log.d("ArView", "Utilisation de la rotation extraite de la matrice")
+                    Log.d("ArView", "=== UTILISATION DE LA ROTATION DE LA MATRICE ===")
                     extractedRotation
                 }
                 
-                Log.d("ArView", "Rotation finale (euler): x=${initialRotation.x}, y=${initialRotation.y}, z=${initialRotation.z}")
+                Log.d("ArView", "=== ROTATION FINALE ===")
+                Log.d("ArView", "Rotation finale (radians): x=${initialRotation.x}, y=${initialRotation.y}, z=${initialRotation.z}")
+                Log.d("ArView", "Rotation finale (degrés): x=${Math.toDegrees(initialRotation.x.toDouble())}°, y=${Math.toDegrees(initialRotation.y.toDouble())}°, z=${Math.toDegrees(initialRotation.z.toDouble())}°")
+                Log.d("ArView", "=== FIN DU TRAITEMENT DE LA ROTATION ===")
 
                 // Créer le nœud ModelNode
                 object : ModelNode(
