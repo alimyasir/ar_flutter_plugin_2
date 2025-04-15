@@ -39,12 +39,16 @@ fun deserializeMatrix4(transform: ArrayList<Double>): Triple<ScenePosition, Scen
     Log.d("Deserializers", "Matrice de rotation normalisée: [$m00, $m01, $m02, $m10, $m11, $m12, $m20, $m21, $m22]")
     
     // Conversion de la matrice de rotation en angles d'Euler
-    // Formule standard de conversion matrice -> angles d'Euler
     val rotX = atan2(m21, m22)
     val rotY = atan2(-m20, sqrt(m21 * m21 + m22 * m22))
     val rotZ = atan2(m10, m00)
     
-    val rotation = SceneRotation(rotX, rotY, rotZ)
+    // Ajout des corrections pour le système de coordonnées
+    val correctedRotX = rotX
+    val correctedRotY = rotY + Math.PI.toFloat() // Rotation de 180° autour de Y
+    val correctedRotZ = rotZ + Math.PI.toFloat() // Rotation de 180° autour de Z
+    
+    val rotation = SceneRotation(correctedRotX, correctedRotY, correctedRotZ)
     
     Log.d("Deserializers", "Rotation extraite (euler): x=${rotation.x}, y=${rotation.y}, z=${rotation.z}")
 

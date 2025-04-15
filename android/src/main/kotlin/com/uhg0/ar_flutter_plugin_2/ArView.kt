@@ -253,19 +253,19 @@ class ArView(
                 
                 // Créer une rotation à partir du vecteur de rotation fourni s'il existe
                 val initialRotation = if (rotationVector != null && rotationVector.size == 4) {
-                    Log.d("ArView", "Utilisation de la rotation spécifiée (quaternion): x=${rotationVector[0]}, y=${rotationVector[1]}, z=${rotationVector[2]}, w=${rotationVector[3]}")
+                    Log.d("ArView", "Rotation vector reçu: $rotationVector")
+                    Log.d("ArView", "Quaternion - w: ${rotationVector[3]}, x: ${rotationVector[0]}, y: ${rotationVector[1]}, z: ${rotationVector[2]}")
                     
-                    // Conversion du quaternion en angles d'Euler
                     val w = rotationVector[3].toFloat()
                     val x = rotationVector[0].toFloat()
                     val y = rotationVector[1].toFloat()
                     val z = rotationVector[2].toFloat()
                     
-                    // Formule standard de conversion quaternion -> angles d'Euler
-                    // Attention aux cas spéciaux (gimbal lock, etc.)
                     val rotX = atan2(2f * (w * x + y * z), 1f - 2f * (x * x + y * y))
                     val rotY = atan2(2f * (w * y - z * x), 1f - 2f * (y * y + z * z))
                     val rotZ = asin(2f * (w * z + x * y))
+                    
+                    Log.d("ArView", "Angles d'Euler calculés - X: ${Math.toDegrees(rotX.toDouble())}°, Y: ${Math.toDegrees(rotY.toDouble())}°, Z: ${Math.toDegrees(rotZ.toDouble())}°")
                     
                     SceneRotation(rotX, rotY, rotZ)
                 } else {
